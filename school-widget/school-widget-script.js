@@ -4,7 +4,7 @@
 // ─────────────────────────────────────────
 //  SCHOOL WIDGET — Magister schedule + deadlines
 //  Scriptable • Large widget recommended
-//  v4: overflow fix · magister tap
+//  v5: Deep Ocean · two-column grid · slim cards
 // ─────────────────────────────────────────
 
 const ICAL_URL     = "https://calendar.magister.net/api/icalendar/feeds/2aaf8a33-f54d-4915-b6ea-6aa0ecdabd1a"
@@ -15,20 +15,19 @@ const CACHE_FILE   = "school_ical.json"
 
 const SETTINGS = {
   refreshMinutes:    10,
-  maxLaterLessons:   3,
-  maxDeadlines:      4,   // absolute ceiling — dynamic calc may reduce this further
+  maxLaterLessons:   6,   // increased — two-column grid fits more
+  maxDeadlines:      5,   // increased — compact rows
   pastDays:          30,
   futureDays:        30,
   breakThresholdMin: 10,
   nextDayLookAhead:  30,
 }
 
-// Widget slot budget. A "slot" ≈ one lesson-row height.
-// Large widget ≈ 20 slots total.
-// Deadline section header/divider costs 2 slots. Each deadline row costs 2 slots.
-const WIDGET_SLOTS      = 20
+// Widget slot budget.
+// Large widget ≈ 22 slots total with the new slimmer card sizes.
+const WIDGET_SLOTS      = 22
 const DEADLINE_OVERHEAD = 2
-const DEADLINE_SLOTS    = 2
+const DEADLINE_SLOTS    = 1   // compact deadline rows cost 1 slot each
 
 const SUBJECT_NAMES = {
   netl: "Nederlands",
@@ -53,7 +52,7 @@ function parseSummary(summary) {
   const dashIdx     = summary.indexOf(" - ")
   const teacher     = dashIdx >= 0 ? summary.slice(dashIdx + 3).trim() : null
   const subjectPart = dashIdx >= 0 ? summary.slice(0, dashIdx).trim() : summary.trim()
-  const words  = subjectPart.split(/\s+/)
+  const words   = subjectPart.split(/\s+/)
   const numWord = words.find(w => !isNaN(w) && w !== "")
   const abbrev  = words.find(w => isNaN(w)) ?? words[0]
   return {
@@ -70,28 +69,37 @@ function expandSubject(summary) {
   return parseSummary(summary).subject
 }
 
+// ─────────────────────────────────────────
+//  THEME — Deep Ocean
+//  Near-black navy base. Cyan for NOW/active.
+//  Emerald for breaks. Indigo for next day.
+//  Rose for tests/urgent. Amber for warnings.
+// ─────────────────────────────────────────
+
 const C = {
-  bg:          new Color("#0f0f0f"),
-  card:        new Color("#1a2a4a"),
-  breakCard:   new Color("#1a3a2a"),
-  nextDayCard: new Color("#2a1a3a"),
-  accent:      new Color("#4f8ef7"),
-  breakAccent: new Color("#3a9e6a"),
-  nextAccent:  new Color("#a070f0"),
-  primary:     new Color("#ffffff"),
-  secondary:   new Color("#8a8a8a"),
-  teacherAbbr: new Color("#555555"),
-  done:        new Color("#3a9e6a"),
-  urgent:      new Color("#e05555"),
-  warning:     new Color("#f5a623"),
-  error:       new Color("#e05555"),
-  periodBg:       new Color("#2d3e63"),
-  periodText:     new Color("#7aabff"),
-  tussenuurCard:  new Color("#1e1e22"),
-  tussenuurText:  new Color("#505060"),
-  testCard:       new Color("#3a1a1a"),
-  cancelledCard:  new Color("#1a1a1a"),
-  cancelledText:  new Color("#404040"),
+  bg:            new Color("#07101c"),   // Near-black, deep ocean
+  card:          new Color("#0c1a2e"),   // Featured card: dark navy
+  breakCard:     new Color("#081a0f"),   // Break: deep forest
+  nextDayCard:   new Color("#0f0b22"),   // Next day: deep indigo
+  accent:        new Color("#22d3ee"),   // NOW: bright cyan
+  breakAccent:   new Color("#4ade80"),   // Break: emerald
+  nextAccent:    new Color("#818cf8"),   // Next day: soft indigo
+  primary:       new Color("#dde8f8"),   // Primary text: cool off-white
+  secondary:     new Color("#253d58"),   // Secondary: muted steel-blue
+  teacherAbbr:   new Color("#1a3048"),   // Teacher abbr: deep muted blue
+  done:          new Color("#4ade80"),   // Done: emerald
+  urgent:        new Color("#f87171"),   // Tests/urgent: rose-red
+  warning:       new Color("#fb923c"),   // Warning: amber
+  error:         new Color("#f87171"),   // Error: rose-red
+  periodBg:      new Color("#0e2035"),   // Period pill bg: deeper navy
+  periodText:    new Color("#38bdf8"),   // Period pill text: sky blue
+  tussenuurCard: new Color("#0a1422"),   // Tussenuur: near-bg
+  tussenuurText: new Color("#162232"),   // Tussenuur text: very muted
+  testCard:      new Color("#1c0e18"),   // Test card: dark rose-plum
+  cancelledCard: new Color("#090e16"),   // Cancelled: near-bg
+  cancelledText: new Color("#162232"),   // Cancelled text: very muted
+  divider:       new Color("#0e2030"),   // Section divider line
+  colDivider:    new Color("#112030"),   // Column divider in grid
 }
 
 // ─────────────────────────────────────────
@@ -316,111 +324,89 @@ function strikeThrough(str) {
   return str.split("").map(c => c + "̶").join("")
 }
 
-// How many slots does a lesson card consume?
-// Card base = 5. Add 1 if it has a location line (including hidden/empty → 💬).
+// Slim card design — uniform 3 slots regardless of content.
 function cardSlots(event) {
-  return event.location != null ? 6 : 5
+  return 3
 }
 
 // ─────────────────────────────────────────
 //  RENDER FUNCTIONS
 // ─────────────────────────────────────────
 
-// Fixed width of the left column (period pill + time range) in lesson cards.
-const LEFT_COL_W = 64
+// Fixed width for the left cell in the two-column lesson grid.
+// Approximates half the large widget's content area (≈ 311px total - 13px dividers = 298, /2 ≈ 149).
+const GRID_CELL_W = 142
 
-// Renders the "teacher · room" second line into a vertical container.
-// Honors location filtering: null → omitted, "verborgen"/"" → 💬, else 📍 room.
-function addMetaLine(container, teacher, location, fontSize) {
-  const hasTeacher = !!teacher
-  const hasLoc     = location != null
-  if (!hasTeacher && !hasLoc) return
-  container.addSpacer(2)
+// ── Mini lesson cell for the two-column grid.
+//    One compact line: [period pill] subject  teacher         start-time
+function renderMiniLessonCell(container, event) {
+  const { subject, teacher, period, isTest, testBadge, isCancelled } = parseSummary(event.summary)
+
   const row = container.addStack()
   row.layoutHorizontally()
   row.centerAlignContent()
-  if (hasTeacher) {
-    const t = row.addText(teacher)
-    t.font      = Font.systemFont(fontSize)
-    t.textColor = C.teacherAbbr
-  }
-  if (hasLoc) {
-    if (hasTeacher) {
-      const sep = row.addText("  ·  ")
-      sep.font      = Font.systemFont(fontSize)
-      sep.textColor = C.teacherAbbr
-    }
-    const isHidden = location === "verborgen" || location === ""
-    const loc = row.addText(isHidden ? "💬" : "📍 " + location)
-    loc.font      = Font.systemFont(fontSize)
-    loc.textColor = C.secondary
-  }
-}
 
-// Two-column lesson body shared by the featured card and the lesson list.
-// Left column (fixed width, right-aligned): period pill above the time range.
-// Right column: subject (bold) + optional test badge, with teacher/room beneath.
-function renderLessonColumns(container, parsed, ev, opts) {
-  const { subject, teacher, period, isTest, testBadge, isCancelled } = parsed
-
-  const body = container.addStack()
-  body.layoutHorizontally()
-  body.topAlignContent()
-
-  // ── Left column: period + time range
-  const left = body.addStack()
-  left.layoutVertically()
-  left.size = new Size(LEFT_COL_W, 0)
+  // Period pill — left-aligned, no leading spacer
   if (period !== null) {
-    const pRow = left.addStack()
-    pRow.layoutHorizontally()
-    pRow.addSpacer()
-    const pill = pRow.addStack()
-    pill.backgroundColor = C.periodBg
-    pill.cornerRadius    = 4
-    pill.setPadding(1, 5, 1, 5)
-    const pillTxt = pill.addText(String(period))
-    pillTxt.font      = Font.boldSystemFont(opts.periodFontSize)
-    pillTxt.textColor = C.periodText
-    left.addSpacer(3)
+    const pill = container.addStack()
+    pill.layoutHorizontally()
+    const p = pill.addStack()
+    p.backgroundColor = C.periodBg
+    p.cornerRadius    = 4
+    p.setPadding(1, 5, 1, 5)
+    const pt = p.addText(String(period))
+    pt.font      = Font.boldSystemFont(9)
+    pt.textColor = C.periodText
+    container.addSpacer(4)
   }
-  const tRow = left.addStack()
-  tRow.layoutHorizontally()
-  tRow.addSpacer()
-  const range = tRow.addText(`${fmtTime(ev.start)}–${fmtTime(ev.end)}`)
-  range.font      = Font.systemFont(opts.timeFontSize)
-  range.textColor = isCancelled ? C.cancelledText : C.secondary
 
-  body.addSpacer(12)
+  // Main content row: subject + teacher + test badge + time
+  const mainRow = container.addStack()
+  mainRow.layoutHorizontally()
+  mainRow.centerAlignContent()
 
-  // ── Right column: subject (+ test badge) and teacher/room beneath
-  const right = body.addStack()
-  right.layoutVertically()
-
-  const subjRow = right.addStack()
-  subjRow.layoutHorizontally()
-  subjRow.centerAlignContent()
+  // Subject
   const displaySubject = isCancelled ? strikeThrough(subject) : subject
-  const name = subjRow.addText(displaySubject)
-  name.font      = Font.boldSystemFont(opts.subjectFontSize)
-  name.textColor = isCancelled ? C.cancelledText : C.primary
-  if (isTest && testBadge) {
-    subjRow.addSpacer(6)
-    const badge = subjRow.addStack()
-    badge.backgroundColor = C.urgent
-    badge.cornerRadius    = 4
-    badge.setPadding(1, 5, 1, 5)
-    const badgeTxt = badge.addText(testBadge)
-    badgeTxt.font      = Font.boldSystemFont(opts.badgeFontSize)
-    badgeTxt.textColor = C.primary
+  const nm = mainRow.addText(displaySubject)
+  nm.font      = Font.boldSystemFont(11)
+  nm.textColor = isCancelled ? C.cancelledText : C.primary
+  nm.lineLimit = 1
+
+  // Teacher abbreviation — inline, right after subject
+  if (teacher) {
+    mainRow.addSpacer(4)
+    const tc = mainRow.addText(teacher)
+    tc.font      = Font.systemFont(9)
+    tc.textColor = C.teacherAbbr
+    tc.lineLimit = 1
   }
 
-  addMetaLine(right, teacher, ev.location, opts.metaFontSize)
+  // Test badge — inline
+  if (isTest && testBadge) {
+    mainRow.addSpacer(3)
+    const badge = mainRow.addStack()
+    badge.backgroundColor = C.urgent
+    badge.cornerRadius    = 3
+    badge.setPadding(1, 3, 1, 3)
+    const bt = badge.addText(testBadge)
+    bt.font      = Font.boldSystemFont(7)
+    bt.textColor = C.primary
+  }
+
+  // Push time to the right
+  mainRow.addSpacer()
+  const time = mainRow.addText(fmtTime(event.start))
+  time.font      = Font.systemFont(9)
+  time.textColor = isCancelled ? C.cancelledText : C.secondary
 }
 
+// ── Featured lesson card (NOW / NEXT LESSON / next-day first).
+//    Slim two-row layout with a coloured left accent strip.
+//    Row 1: label (accent)  ·  countdown (accent)
+//    Row 2: period pill  ·  subject  ·  teacher  ·  time range
+//    Row 3 (optional): location plain text
 function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
-  const parsed = parseSummary(event.summary)
-  const { isTest, isCancelled } = parsed
+  const { subject, teacher, period, isTest, testBadge, isCancelled } = parseSummary(event.summary)
 
   if (isCancelled) {
     cardColor   = C.cancelledCard
@@ -430,142 +416,276 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
     accentColor = C.urgent
   }
 
+  // Outer card — horizontal so we can place the accent strip on the far left
   const card = w.addStack()
   card.backgroundColor = cardColor
-  card.cornerRadius    = 10
-  card.setPadding(10, 12, 10, 12)
-  card.layoutVertically()
+  card.cornerRadius    = 12
+  card.layoutHorizontally()
+  card.topAlignContent()
+  card.setPadding(0, 0, 0, 0)
 
-  // Label + countdown span the full width above the two columns.
-  const topRow = card.addStack()
+  // Left accent strip: 4pt wide, stretches to full card height
+  const strip = card.addStack()
+  strip.backgroundColor = accentColor
+  strip.size = new Size(4, 0)
+
+  // Gap between strip and content
+  card.addSpacer(10)
+
+  // Content area — vertical stack
+  const content = card.addStack()
+  content.layoutVertically()
+  content.setPadding(8, 0, 8, 12)
+
+  // ── Row 1: label (left) · countdown (right)
+  const topRow = content.addStack()
   topRow.layoutHorizontally()
   topRow.centerAlignContent()
   const lbl = topRow.addText(label)
-  lbl.font      = Font.boldSystemFont(9)
+  lbl.font      = Font.boldSystemFont(8)
   lbl.textColor = accentColor
   topRow.addSpacer()
   const ctd = topRow.addText(countdown)
-  ctd.font      = Font.mediumSystemFont(10)
+  ctd.font      = Font.systemFont(10)
   ctd.textColor = accentColor
 
-  card.addSpacer(7)
+  content.addSpacer(5)
 
-  renderLessonColumns(card, parsed, event, {
-    periodFontSize:  13,
-    timeFontSize:    10,
-    subjectFontSize: 16,
-    badgeFontSize:   9,
-    metaFontSize:    10,
-  })
+  // ── Row 2: period  ·  subject  ·  [badge]  ·  teacher  ·  spacer  ·  time range
+  const mainRow = content.addStack()
+  mainRow.layoutHorizontally()
+  mainRow.centerAlignContent()
+
+  // Period pill — left-aligned (no leading spacer before pill)
+  if (period !== null) {
+    const pill = mainRow.addStack()
+    pill.backgroundColor = C.periodBg
+    pill.cornerRadius    = 5
+    pill.setPadding(2, 7, 2, 7)
+    const pt = pill.addText(String(period))
+    pt.font      = Font.boldSystemFont(12)
+    pt.textColor = C.periodText
+    mainRow.addSpacer(8)
+  }
+
+  // Subject name
+  const displaySubject = isCancelled ? strikeThrough(subject) : subject
+  const nm = mainRow.addText(displaySubject)
+  nm.font      = Font.boldSystemFont(13)
+  nm.textColor = isCancelled ? C.cancelledText : C.primary
+
+  // Test badge
+  if (isTest && testBadge) {
+    mainRow.addSpacer(6)
+    const badge = mainRow.addStack()
+    badge.backgroundColor = C.urgent
+    badge.cornerRadius    = 4
+    badge.setPadding(2, 5, 2, 5)
+    const bt = badge.addText(testBadge)
+    bt.font      = Font.boldSystemFont(8)
+    bt.textColor = C.primary
+  }
+
+  // Teacher abbreviation — inline next to subject
+  if (teacher) {
+    mainRow.addSpacer(6)
+    const tc = mainRow.addText(teacher)
+    tc.font      = Font.systemFont(10)
+    tc.textColor = C.teacherAbbr
+  }
+
+  // Time range — right-aligned
+  mainRow.addSpacer()
+  const timeRange = mainRow.addText(`${fmtTime(event.start)}–${fmtTime(event.end)}`)
+  timeRange.font      = Font.systemFont(10)
+  timeRange.textColor = isCancelled ? C.cancelledText : C.secondary
+
+  // ── Row 3 (optional): location — plain text, no emoji
+  const isHiddenLoc = !event.location || event.location === "verborgen" || event.location === ""
+  if (!isHiddenLoc) {
+    content.addSpacer(3)
+    const loc = content.addText(event.location)
+    loc.font      = Font.systemFont(9)
+    loc.textColor = C.secondary
+  }
 }
 
+// ── Break card — slim, same accent-strip structure as the featured card.
 function renderBreakCard(w, brk) {
+  const { subject: nxSubject, teacher: nxTeacher, period: nxPeriod } = parseSummary(brk.next.summary)
+
   const card = w.addStack()
   card.backgroundColor = C.breakCard
-  card.cornerRadius    = 10
-  card.setPadding(10, 12, 10, 12)
-  card.layoutVertically()
+  card.cornerRadius    = 12
+  card.layoutHorizontally()
+  card.topAlignContent()
+  card.setPadding(0, 0, 0, 0)
 
-  const topRow = card.addStack()
+  // Left accent strip
+  const strip = card.addStack()
+  strip.backgroundColor = C.breakAccent
+  strip.size = new Size(4, 0)
+
+  card.addSpacer(10)
+
+  const content = card.addStack()
+  content.layoutVertically()
+  content.setPadding(8, 0, 8, 12)
+
+  // Row 1: "BREAK" · total · spacer · remaining
+  const topRow = content.addStack()
   topRow.layoutHorizontally()
   topRow.centerAlignContent()
   const lbl = topRow.addText("BREAK")
-  lbl.font      = Font.boldSystemFont(9)
+  lbl.font      = Font.boldSystemFont(8)
   lbl.textColor = C.breakAccent
-  topRow.addSpacer()
+  topRow.addSpacer(6)
   const dur = topRow.addText(`${brk.total} min total`)
   dur.font      = Font.systemFont(9)
   dur.textColor = C.secondary
-
-  card.addSpacer(5)
-  const { subject: nxSubject, teacher: nxTeacher, period: nxPeriod } = parseSummary(brk.next.summary)
-  const nextRow = card.addStack()
-  nextRow.layoutHorizontally()
-  nextRow.centerAlignContent()
-  if (nxPeriod !== null) {
-    const pill = nextRow.addStack()
-    pill.backgroundColor = C.periodBg
-    pill.cornerRadius    = 4
-    pill.setPadding(2, 5, 2, 5)
-    const pillTxt = pill.addText(String(nxPeriod))
-    pillTxt.font      = Font.boldSystemFont(11)
-    pillTxt.textColor = C.periodText
-    nextRow.addSpacer(7)
-  }
-  const next = nextRow.addText("Next: " + nxSubject)
-  next.font      = Font.boldSystemFont(15)
-  next.textColor = C.primary
-  if (nxTeacher) {
-    nextRow.addSpacer(5)
-    const tchr = nextRow.addText(nxTeacher)
-    tchr.font      = Font.systemFont(9)
-    tchr.textColor = C.teacherAbbr
-  }
-
-  if (brk.next.location) {
-    card.addSpacer(3)
-    const loc = card.addText("📍 " + brk.next.location)
-    loc.font      = Font.systemFont(10)
-    loc.textColor = C.secondary
-  }
-
-  card.addSpacer(4)
-  const rem = card.addText(`${brk.remaining} min remaining`)
+  topRow.addSpacer()
+  const rem = topRow.addText(`${brk.remaining} min left`)
   rem.font      = Font.mediumSystemFont(10)
   rem.textColor = C.breakAccent
+
+  content.addSpacer(5)
+
+  // Row 2: period · "Next:" subject · teacher · spacer · time range
+  const mainRow = content.addStack()
+  mainRow.layoutHorizontally()
+  mainRow.centerAlignContent()
+
+  if (nxPeriod !== null) {
+    const pill = mainRow.addStack()
+    pill.backgroundColor = C.periodBg
+    pill.cornerRadius    = 5
+    pill.setPadding(2, 7, 2, 7)
+    const pt = pill.addText(String(nxPeriod))
+    pt.font      = Font.boldSystemFont(12)
+    pt.textColor = C.periodText
+    mainRow.addSpacer(8)
+  }
+
+  const next = mainRow.addText("Next: " + nxSubject)
+  next.font      = Font.boldSystemFont(13)
+  next.textColor = C.primary
+
+  if (nxTeacher) {
+    mainRow.addSpacer(6)
+    const tc = mainRow.addText(nxTeacher)
+    tc.font      = Font.systemFont(10)
+    tc.textColor = C.teacherAbbr
+  }
+
+  mainRow.addSpacer()
+  const timeRange = mainRow.addText(`${fmtTime(brk.next.start)}–${fmtTime(brk.next.end)}`)
+  timeRange.font      = Font.systemFont(10)
+  timeRange.textColor = C.secondary
+
+  // Location — plain text, no emoji
+  const isHiddenLoc = !brk.next.location || brk.next.location === "verborgen" || brk.next.location === ""
+  if (!isHiddenLoc) {
+    content.addSpacer(3)
+    const loc = content.addText(brk.next.location)
+    loc.font      = Font.systemFont(9)
+    loc.textColor = C.secondary
+  }
 }
 
 function renderTussenuurRow(w, placeholder) {
   const row = w.addStack()
   row.backgroundColor = C.tussenuurCard
-  row.cornerRadius    = 6
-  row.setPadding(5, 10, 5, 10)
+  row.cornerRadius    = 5
+  row.setPadding(4, 10, 4, 10)
   row.layoutHorizontally()
   row.centerAlignContent()
   const periodStr = placeholder.fromPeriod === placeholder.toPeriod
     ? `uur ${placeholder.fromPeriod}`
     : `uur ${placeholder.fromPeriod}–${placeholder.toPeriod}`
   const txt = row.addText(`Tussenuur  ·  ${periodStr}`)
-  txt.font      = Font.systemFont(11)
+  txt.font      = Font.systemFont(10)
   txt.textColor = C.tussenuurText
 }
 
-// Renders a lesson list and returns how many slot units it consumed.
-function renderLessonList(w, events, sectionHeader) {
+// ── Two-column lesson grid.
+//    Pairs lessons side-by-side with a thin vertical divider.
+//    Tussenuur placeholders always render full-width.
+//    Unpaired lessons (odd count or next to tussenuur) render full-width.
+function renderLessonGrid(w, events, sectionHeader) {
   const shown         = Math.min(events.length, SETTINGS.maxLaterLessons)
   const lessonsToShow = events.slice(0, shown)
   const items         = insertTussenuurPlaceholders(lessonsToShow)
 
   const hdr = w.addText(sectionHeader)
-  hdr.font      = Font.boldSystemFont(9)
+  hdr.font      = Font.boldSystemFont(8)
   hdr.textColor = C.secondary
-  w.addSpacer(4)
+  w.addSpacer(5)
 
-  for (const item of items) {
-    if (item.isTussenuur) {
-      renderTussenuurRow(w, item)
-      w.addSpacer(5)
+  let i        = 0
+  let rowCount = 0
+
+  while (i < items.length) {
+    const a = items[i]
+
+    // Tussenuur — always full width
+    if (a.isTussenuur) {
+      renderTussenuurRow(w, a)
+      w.addSpacer(4)
+      i++
+      rowCount++
       continue
     }
-    const parsed = parseSummary(item.summary)
-    renderLessonColumns(w, parsed, item, {
-      periodFontSize:  11,
-      timeFontSize:    9,
-      subjectFontSize: 13,
-      badgeFontSize:   8,
-      metaFontSize:    9,
-    })
-    w.addSpacer(6)
+
+    // Peek at the next item — only pair if it's a real lesson (not tussenuur)
+    const nextItem = i + 1 < items.length ? items[i + 1] : null
+    const b        = (nextItem && !nextItem.isTussenuur) ? nextItem : null
+
+    if (b) {
+      // ── Two-column row
+      const rowStack = w.addStack()
+      rowStack.layoutHorizontally()
+      rowStack.topAlignContent()
+
+      // Left cell — fixed width for consistent columns
+      const leftCell = rowStack.addStack()
+      leftCell.layoutVertically()
+      leftCell.size = new Size(GRID_CELL_W, 0)
+      renderMiniLessonCell(leftCell, a)
+
+      // Thin vertical divider — fixed height approximating row height
+      rowStack.addSpacer(6)
+      const vdiv = rowStack.addStack()
+      vdiv.backgroundColor = C.colDivider
+      vdiv.size = new Size(1, 22)
+      rowStack.addSpacer(6)
+
+      // Right cell — fills remaining width
+      const rightCell = rowStack.addStack()
+      rightCell.layoutVertically()
+      renderMiniLessonCell(rightCell, b)
+
+      i += 2
+    } else {
+      // ── Single lesson — full width row
+      const fullRow = w.addStack()
+      fullRow.layoutVertically()
+      renderMiniLessonCell(fullRow, a)
+
+      i++
+    }
+
+    w.addSpacer(5)
+    rowCount++
   }
 
   if (events.length > SETTINGS.maxLaterLessons) {
     const more = w.addText(`+${events.length - SETTINGS.maxLaterLessons} more`)
-    more.font      = Font.systemFont(10)
+    more.font      = Font.systemFont(9)
     more.textColor = C.secondary
   }
 
-  const tussenuurCount = items.filter(i => i.isTussenuur).length
-  return 1 + shown * 2 + tussenuurCount  // header + lesson rows (≈2 slots each) + tussenuur rows
+  const tussenuurCount = items.filter(x => x.isTussenuur).length
+  return 1 + Math.ceil(shown / 2) + tussenuurCount
 }
 
 function renderDeadlines(w, deadlines, reminders, maxItems) {
@@ -590,46 +710,47 @@ function renderDeadlines(w, deadlines, reminders, maxItems) {
 
   if (!combined.length) return
 
-  w.addSpacer(10)
+  w.addSpacer(7)
   const divider = w.addStack()
-  divider.backgroundColor = new Color("#2a2a2a")
+  divider.backgroundColor = C.divider
   divider.size = new Size(0, 1)
-  w.addSpacer(8)
+  w.addSpacer(6)
 
   const hdr = w.addText("DEADLINES & REMINDERS")
-  hdr.font      = Font.boldSystemFont(9)
+  hdr.font      = Font.boldSystemFont(8)
   hdr.textColor = C.secondary
-  w.addSpacer(6)
+  w.addSpacer(5)
 
   for (const item of combined) {
     const row = w.addStack()
     row.layoutHorizontally()
     row.centerAlignContent()
-    row.setPadding(4, 0, 4, 0)
+    row.setPadding(2, 0, 2, 0)
     row.url = item.url
 
     const icon = row.addText(item.icon + " ")
-    icon.font      = Font.systemFont(14)
+    icon.font      = Font.systemFont(12)
     icon.textColor = C.secondary
 
     const name = row.addText(item.name)
-    name.font      = Font.systemFont(14)
+    name.font      = Font.systemFont(12)
     name.textColor = C.primary
+    name.lineLimit = 1
 
     row.addSpacer()
 
     if (item.days !== null) {
       const { text, color } = deadlineDisplay(item.days, item.rawDate)
       const lbl = row.addText(text)
-      lbl.font      = Font.boldSystemFont(12)
+      lbl.font      = Font.boldSystemFont(11)
       lbl.textColor = color
     } else {
       const lbl = row.addText("No date")
-      lbl.font      = Font.systemFont(12)
+      lbl.font      = Font.systemFont(11)
       lbl.textColor = C.secondary
     }
 
-    w.addSpacer(6)
+    w.addSpacer(3)
   }
 }
 
@@ -639,10 +760,15 @@ function renderDeadlines(w, deadlines, reminders, maxItems) {
 
 async function buildWidget() {
   const w = new ListWidget()
-  w.backgroundColor = C.bg
   w.setPadding(14, 14, 14, 14)
   w.refreshAfterDate = new Date(Date.now() + SETTINGS.refreshMinutes * 60 * 1000)
   w.url = TAP_URL
+
+  // Background gradient — deep ocean: near-black at top, slightly lighter at bottom
+  const grad = new LinearGradient()
+  grad.colors    = [new Color("#07101c"), new Color("#091628")]
+  grad.locations = [0.0, 1.0]
+  w.backgroundGradient = grad
 
   const now = new Date()
 
@@ -654,11 +780,11 @@ async function buildWidget() {
   const dayTxt = header.addText(
     now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })
   )
-  dayTxt.font      = Font.mediumSystemFont(11)
+  dayTxt.font      = Font.systemFont(11)
   dayTxt.textColor = C.secondary
   header.addSpacer()
   const timeTxt = header.addText(fmtTime(now))
-  timeTxt.font      = Font.boldSystemFont(13)
+  timeTxt.font      = Font.boldSystemFont(14)
   timeTxt.textColor = C.primary
 
   w.addSpacer(10)
@@ -723,7 +849,7 @@ async function buildWidget() {
     const laterToday = todayAll.filter(e => e.start > now)
     if (laterToday.length > 0) {
       w.addSpacer(8)
-      slotsUsed += renderLessonList(w, laterToday, "LATER TODAY")
+      slotsUsed += renderLessonGrid(w, laterToday, "LATER TODAY")
     }
 
   // CASE 2: In a break or before first lesson
@@ -736,7 +862,7 @@ async function buildWidget() {
       const afterBreak = todayAll.filter(e => e.start > brk.next.start)
       if (afterBreak.length > 0) {
         w.addSpacer(8)
-        slotsUsed += renderLessonList(w, afterBreak, "LATER TODAY")
+        slotsUsed += renderLessonGrid(w, afterBreak, "LATER TODAY")
       }
     } else {
       const next = todayAll.find(e => e.start > now)
@@ -746,7 +872,7 @@ async function buildWidget() {
       const rest = todayAll.filter(e => e.start > next.start)
       if (rest.length > 0) {
         w.addSpacer(8)
-        slotsUsed += renderLessonList(w, rest, "LATER TODAY")
+        slotsUsed += renderLessonGrid(w, rest, "LATER TODAY")
       }
     }
 
@@ -782,7 +908,7 @@ async function buildWidget() {
       const restOfNextDay = nextDayEvts.slice(1)
       if (restOfNextDay.length > 0) {
         w.addSpacer(8)
-        slotsUsed += renderLessonList(w, restOfNextDay, `${label} — REST OF DAY`)
+        slotsUsed += renderLessonGrid(w, restOfNextDay, `${label} — REST OF DAY`)
       }
     } else {
       w.addSpacer(6)
