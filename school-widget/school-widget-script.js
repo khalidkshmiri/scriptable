@@ -45,8 +45,15 @@ const SUBJECT_NAMES = {
 
 function parseSummary(summary) {
   if (!summary) return { subject: summary, teacher: null }
-  const parts = summary.trim().split(/\s+/)
-  const last  = parts[parts.length - 1]
+  const parts    = summary.trim().split(/\s+/)
+  const firstKey = parts[0].toLowerCase()
+  if (SUBJECT_NAMES[firstKey]) {
+    return {
+      subject: SUBJECT_NAMES[firstKey],
+      teacher: parts.length > 1 ? parts.slice(1).join(" ").toLowerCase() : null,
+    }
+  }
+  const last = parts[parts.length - 1]
   const hasTeacher = parts.length > 1 && /^[a-zA-Z]{2,4}$/.test(last)
   const subjectKey = hasTeacher ? parts.slice(0, -1).join(" ") : summary.trim()
   return {
