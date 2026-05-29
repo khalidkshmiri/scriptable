@@ -43,10 +43,20 @@ const SUBJECT_NAMES = {
   cbb:  "CBB",
 }
 
+function parseSummary(summary) {
+  if (!summary) return { subject: summary, teacher: null }
+  const parts = summary.trim().split(/\s+/)
+  const last  = parts[parts.length - 1]
+  const hasTeacher = parts.length > 1 && /^[a-zA-Z]{2,4}$/.test(last)
+  const subjectKey = hasTeacher ? parts.slice(0, -1).join(" ") : summary.trim()
+  return {
+    subject: SUBJECT_NAMES[subjectKey.toLowerCase()] || subjectKey,
+    teacher: hasTeacher ? last.toLowerCase() : null,
+  }
+}
+
 function expandSubject(summary) {
-  if (!summary) return summary
-  const key = summary.trim().toLowerCase()
-  return SUBJECT_NAMES[key] || summary
+  return parseSummary(summary).subject
 }
 
 const C = {
@@ -295,9 +305,19 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
   range.textColor = C.secondary
 
   card.addSpacer(5)
-  const name = card.addText(expandSubject(event.summary))
+  const { subject: evSubject, teacher: evTeacher } = parseSummary(event.summary)
+  const nameRow = card.addStack()
+  nameRow.layoutHorizontally()
+  nameRow.centerAlignContent()
+  const name = nameRow.addText(evSubject)
   name.font      = Font.boldSystemFont(16)
   name.textColor = C.primary
+  if (evTeacher) {
+    nameRow.addSpacer(5)
+    const tchr = nameRow.addText(evTeacher)
+    tchr.font      = Font.systemFont(11)
+    tchr.textColor = C.secondary
+  }
 
   if (event.location) {
     card.addSpacer(3)
@@ -331,9 +351,19 @@ function renderBreakCard(w, brk) {
   dur.textColor = C.secondary
 
   card.addSpacer(5)
-  const next = card.addText("Next: " + expandSubject(brk.next.summary))
+  const { subject: nxSubject, teacher: nxTeacher } = parseSummary(brk.next.summary)
+  const nextRow = card.addStack()
+  nextRow.layoutHorizontally()
+  nextRow.centerAlignContent()
+  const next = nextRow.addText("Next: " + nxSubject)
   next.font      = Font.boldSystemFont(15)
   next.textColor = C.primary
+  if (nxTeacher) {
+    nextRow.addSpacer(5)
+    const tchr = nextRow.addText(nxTeacher)
+    tchr.font      = Font.systemFont(11)
+    tchr.textColor = C.secondary
+  }
 
   if (brk.next.location) {
     card.addSpacer(3)
@@ -363,9 +393,16 @@ function renderLessonList(w, events, sectionHeader) {
     const dot = row.addText("• ")
     dot.font      = Font.boldSystemFont(13)
     dot.textColor = C.accent
-    const name = row.addText(expandSubject(ev.summary))
+    const { subject: lsSubject, teacher: lsTeacher } = parseSummary(ev.summary)
+    const name = row.addText(lsSubject)
     name.font      = Font.systemFont(12)
     name.textColor = C.primary
+    if (lsTeacher) {
+      row.addSpacer(4)
+      const tchr = row.addText(lsTeacher)
+      tchr.font      = Font.systemFont(10)
+      tchr.textColor = C.secondary
+    }
     row.addSpacer()
     const time = row.addText(fmtTime(ev.start))
     time.font      = Font.systemFont(11)
