@@ -32,6 +32,7 @@ const DEADLINE_SLOTS    = 2
 
 const SUBJECT_NAMES = {
   netl: "Nederlands",
+  ellh: "Engels",
   econ: "Economie",
   wisb: "Wiskunde",
   fatl: "Frans",
@@ -45,20 +46,14 @@ const SUBJECT_NAMES = {
 
 function parseSummary(summary) {
   if (!summary) return { subject: summary, teacher: null }
-  const parts    = summary.trim().split(/\s+/)
-  const firstKey = parts[0].toLowerCase()
-  if (SUBJECT_NAMES[firstKey]) {
-    return {
-      subject: SUBJECT_NAMES[firstKey],
-      teacher: parts.length > 1 ? parts.slice(1).join(" ").toLowerCase() : null,
-    }
-  }
-  const last = parts[parts.length - 1]
-  const hasTeacher = parts.length > 1 && /^[a-zA-Z]{2,4}$/.test(last)
-  const subjectKey = hasTeacher ? parts.slice(0, -1).join(" ") : summary.trim()
+  const dashIdx     = summary.indexOf(" - ")
+  const teacher     = dashIdx >= 0 ? summary.slice(dashIdx + 3).trim() : null
+  const subjectPart = dashIdx >= 0 ? summary.slice(0, dashIdx).trim() : summary.trim()
+  const words  = subjectPart.split(/\s+/)
+  const abbrev = words.find(w => isNaN(w)) ?? words[0]
   return {
-    subject: SUBJECT_NAMES[subjectKey.toLowerCase()] || subjectKey,
-    teacher: hasTeacher ? last.toLowerCase() : null,
+    subject: SUBJECT_NAMES[abbrev.toLowerCase()] ?? abbrev,
+    teacher: teacher ? teacher.toLowerCase() : null,
   }
 }
 
