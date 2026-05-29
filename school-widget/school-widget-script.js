@@ -71,6 +71,7 @@ const C = {
   nextAccent:  new Color("#a070f0"),
   primary:     new Color("#ffffff"),
   secondary:   new Color("#8a8a8a"),
+  teacherAbbr: new Color("#555555"),
   done:        new Color("#3a9e6a"),
   urgent:      new Color("#e05555"),
   warning:     new Color("#f5a623"),
@@ -317,8 +318,8 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
   if (evTeacher) {
     nameRow.addSpacer(5)
     const tchr = nameRow.addText(evTeacher)
-    tchr.font      = Font.systemFont(11)
-    tchr.textColor = C.secondary
+    tchr.font      = Font.systemFont(9)
+    tchr.textColor = C.teacherAbbr
   }
 
   if (event.location) {
@@ -363,8 +364,8 @@ function renderBreakCard(w, brk) {
   if (nxTeacher) {
     nextRow.addSpacer(5)
     const tchr = nextRow.addText(nxTeacher)
-    tchr.font      = Font.systemFont(11)
-    tchr.textColor = C.secondary
+    tchr.font      = Font.systemFont(9)
+    tchr.textColor = C.teacherAbbr
   }
 
   if (brk.next.location) {
@@ -402,8 +403,8 @@ function renderLessonList(w, events, sectionHeader) {
     if (lsTeacher) {
       row.addSpacer(4)
       const tchr = row.addText(lsTeacher)
-      tchr.font      = Font.systemFont(10)
-      tchr.textColor = C.secondary
+      tchr.font      = Font.systemFont(9)
+      tchr.textColor = C.teacherAbbr
     }
     row.addSpacer()
     const time = row.addText(fmtTime(ev.start))
