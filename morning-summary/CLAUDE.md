@@ -8,7 +8,7 @@ A single-file **Scriptable** script (`morning-summary-script.js`) that runs on i
 
 ## Deployment
 
-Editing the file on Mac (via VS Code or any editor) syncs to Scriptable automatically via iCloud Drive. If the app shows a stale version, reopen Scriptable or pull to refresh. The script runs via a Shortcuts wake automation — not manually.
+Editing the file on Mac (via VS Code or any editor) syncs to Scriptable when manually pasting to iCloud Drive. If the app shows a stale version, reopen Scriptable or pull to refresh. The script runs via a Shortcuts wake automation — not manually.
 
 ## Architecture
 
@@ -67,9 +67,3 @@ Each data fetch returns `{ ok: false }` on failure. Sections are skipped in layo
 
 Separate Shortcut that runs *before* MorningSummary in the wake automation. Finds the first calendar event with a location not matching "Straatweg" (home street), reads a `#drive`/`#walk`/`#bike`/`#transit` tag from the event's Notes field, gets Apple Maps travel time, and sends a Telegram text: `Leave by 08:15 for Dentist — 23 min by public transport`. This logic is entirely in Shortcuts, not in this JS file.
 
-## Pending features (not yet implemented)
-
-- Tomorrow's agenda preview
-- Monday week preview (event/client count for the week, Mondays only)
-- Back-to-back event warning (tight gaps given travel time)
-- NS disruption alerts (Dutch rail, free API)
