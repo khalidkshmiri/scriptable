@@ -163,7 +163,8 @@ async function fetchIcal(url) {
   let icalText  = null
   let fromCache = false
   try {
-    const req = new Request(url)
+    const httpUrl = url.replace(/^webcal:\/\//i, "https://")
+    const req = new Request(httpUrl)
     icalText  = await req.loadString()
     saveCache(icalText)
   } catch {
