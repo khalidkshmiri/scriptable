@@ -59,20 +59,21 @@ function parseSummary(summary) {
   const testBadge   = /\bse\b/.test(lower) ? "SE" : /\b(pw|toets|proefwerk)\b/.test(lower) ? "PW" : null
   const isTest      = testBadge !== null
   // Support " - ", " — " (em-dash), and "(teacher)" patterns
-  const parenMatch  = summary.match(/^(.*?)\s*\(([^)]+)\)\s*$/)
-  const dashIdx     = summary.indexOf(" - ") >= 0 ? summary.indexOf(" - ")
-                    : summary.indexOf(" — ") >= 0 ? summary.indexOf(" — ")
-                    : -1
+  let dashIdx = summary.indexOf(" - ")
+  if (dashIdx < 0) dashIdx = summary.indexOf(" — ")
   let teacher, subjectPart
   if (dashIdx >= 0) {
     teacher     = summary.slice(dashIdx + 3).trim()
     subjectPart = summary.slice(0, dashIdx).trim()
-  } else if (parenMatch) {
-    teacher     = parenMatch[2].trim()
-    subjectPart = parenMatch[1].trim()
   } else {
-    teacher     = null
-    subjectPart = summary.trim()
+    const parenMatch = summary.match(/^(.*?)\s*\(([^)]+)\)\s*$/)
+    if (parenMatch) {
+      teacher     = parenMatch[2].trim()
+      subjectPart = parenMatch[1].trim()
+    } else {
+      teacher     = null
+      subjectPart = summary.trim()
+    }
   }
   const words   = subjectPart.split(/\s+/)
   const numWord = words.find(w => !isNaN(w) && w !== "")
@@ -311,7 +312,7 @@ function toCalShowTime(date) {
 }
 
 function isHiddenLocation(loc) {
-  return !loc || loc === "verborgen" || loc === ""
+  return !loc || loc === "verborgen"
 }
 
 function detectBreak(todayAll, now) {
@@ -361,7 +362,8 @@ function cardSlots(event) {
 
 // Fixed width for the left cell in the two-column lesson grid.
 // Approximates half the large widget's content area (≈ 311px total - 13px dividers = 298, /2 ≈ 149).
-const GRID_CELL_W = 142
+const GRID_CELL_W    = 142
+const CARD_CONTENT_W = 280
 
 // ── Mini lesson cell for the two-column grid.
 //    Row 1: [period pill] subject  teacher  [badge]  time
@@ -571,11 +573,11 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown, pr
     // Filled portion — rendered as a proportionally-sized inner stack
     const filled = barOuter.addStack()
     filled.backgroundColor = accentColor
-    filled.size = new Size(filledFraction * 280, 3)
+    filled.size = new Size(filledFraction * CARD_CONTENT_W, 3)
     // Remaining portion
     const remaining = barOuter.addStack()
     remaining.backgroundColor = C.secondary
-    remaining.size = new Size((1 - filledFraction) * 280, 3)
+    remaining.size = new Size((1 - filledFraction) * CARD_CONTENT_W, 3)
   }
 }
 
