@@ -8,13 +8,17 @@ A single-file Scriptable widget (`school-widget-script.js`) that runs on iOS. It
 
 ## How to deploy
 
-Copy the contents of `school-widget-script.js` into a new script in the Scriptable iOS app. The script name in Scriptable should be `School Widget`. The widget should be placed as a Large widget. No other setup is needed — the iCloud cache folder is created automatically on first run.
+1. Copy `Config/school-widget-config.example.json` to `Config/school-widget-config.json` in the same Scriptable iCloud folder.
+2. Open Magister → Profiel → Agenda → iCal and copy your personal feed URL into `icalUrl`.
+3. Copy the contents of `school-widget-script.js` into a new script in the Scriptable iOS app. Name it `School Widget`. Place it as a Large widget.
+
+The iCloud cache folder is created automatically on first run. If the config file is missing or the placeholder URL is unchanged, the widget shows a setup error instead of crashing.
 
 ## Architecture
 
 The script is structured in five sections (marked by comment banners):
 
-1. **Config** — `ICAL_URL`, `CAL_NAME`, `SETTINGS`, slot budget constants, and the `C` color palette at the top of the file. Tune these without touching logic.
+1. **Config** — `CAL_NAME`, `SETTINGS`, slot budget constants, and the `C` color palette at the top of the file. `ICAL_URL` is loaded at runtime from `Config/school-widget-config.json` via `loadConfig()`. Tune these without touching logic.
 2. **Cache** — Reads/writes `iCloud Drive/Scriptable/Cache/school_ical.json`. Falls back to cache silently on network failure.
 3. **Fetch + parse** — `fetchIcal` fetches the Magister iCal feed and calls `parseIcal`. `fetchDeadlines` and `fetchReminders` use the Scriptable `Calendar`/`Reminder` APIs, looking for a calendar and reminder list both named exactly `"School"`.
 4. **Helpers** — Pure utility functions: date formatting, slot counting, break detection, deadline urgency coloring.

@@ -7,7 +7,7 @@
 //  v5: Deep Ocean · two-column grid · slim cards
 // ─────────────────────────────────────────
 
-const ICAL_URL     = "https://calendar.magister.net/api/icalendar/feeds/2aaf8a33-f54d-4915-b6ea-6aa0ecdabd1a"
+let   ICAL_URL     = ""   // loaded from Config/school-widget-config.json
 const CAL_NAME     = "School"
 const TAP_URL      = "magister://"
 const CACHE_FOLDER = "Cache"
@@ -1028,9 +1028,24 @@ async function buildWidget() {
 }
 
 // ─────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────
+
+async function loadConfig() {
+  const fm   = FileManager.iCloud()
+  const path = fm.joinPath(fm.documentsDirectory(), "Config/school-widget-config.json")
+  if (!fm.fileExists(path)) throw new Error("Config/school-widget-config.json not found — copy the .example file and fill in your Magister iCal URL")
+  await fm.downloadFileFromiCloud(path)
+  const { icalUrl } = JSON.parse(fm.readString(path))
+  if (!icalUrl || icalUrl === "YOUR_MAGISTER_ICAL_URL") throw new Error("Set icalUrl in Config/school-widget-config.json")
+  ICAL_URL = icalUrl
+}
+
+// ─────────────────────────────────────────
 //  RUN
 // ─────────────────────────────────────────
 
+await loadConfig()
 const widget = await buildWidget()
 if (config.runsInWidget) {
   Script.setWidget(widget)
