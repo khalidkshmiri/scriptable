@@ -13,10 +13,21 @@
 
 // ─── CONFIG ───────────────────────────────────────────
 const CFG = {
-  token:     "8640101139:AAHXGd_zOmbshBEtSUjcFW-zkap4JNr47hE",
-  chatId:    "8005583266",
+  token:     "",
+  chatId:    "",
   calendars: ["Events","Family","Rooster","School","Personal","Barber Appointments","Admin","Other"],
   thresh:    { wind: 25, cold: 3, warm: 25, uv: 6 }
+}
+
+async function loadConfig() {
+  const fm = FileManager.iCloud()
+  const path = fm.joinPath(fm.documentsDirectory(), "Config/morning-summary-config.json")
+  if (!fm.fileExists(path)) throw new Error("Config/morning-summary-config.json not found in Scriptable folder")
+  await fm.downloadFileFromiCloud(path)
+  const raw = fm.readString(path)
+  const { token, chatId } = JSON.parse(raw)
+  CFG.token = token
+  CFG.chatId = chatId
 }
 
 // ─── DESIGN ───────────────────────────────────────────
@@ -589,6 +600,7 @@ async function sendPhoto(image, caption) {
 
 // ─── MAIN ─────────────────────────────────────────────
 async function main() {
+  await loadConfig()
   const now = new Date()
   const [weather, calendar, reminders] = await Promise.all([
     getWeather(), getCalendar(), getReminders()
