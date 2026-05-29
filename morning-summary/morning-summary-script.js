@@ -520,10 +520,25 @@ function buildAdvice(weather, calendar) {
     for (const n of CFG.calendars) if (calendar.grouped[n]) all.push(...calendar.grouped[n])
     all.sort((a, b) => a.startDate - b.startDate)
 
-    // busy / light day
-    if (calendar.total >= 4) {
-      advice.push(`Heavy day \u2014 ${calendar.total} events. Stay on schedule`)
-    } else if (calendar.total <= 1) {
+    // busy / light day \u2014 barber appointments within 2h of each other count as 1
+    const barberAppts = (calendar.grouped["Barber Appointments"] || [])
+      .slice().sort((a, b) => a.startDate - b.startDate)
+    let barberGroups = 0, groupEnd = null
+    for (const appt of barberAppts) {
+      if (groupEnd === null || appt.startDate - groupEnd > 2 * 60 * 60 * 1000) barberGroups++
+      if (groupEnd === null || appt.endDate > groupEnd) groupEnd = appt.endDate
+    }
+    const roosterAppts = (calendar.grouped["Rooster"] || [])
+      .slice().sort((a, b) => a.startDate - b.startDate)
+    let roosterGroups = 0; groupEnd = null
+    for (const appt of roosterAppts) {
+      if (groupEnd === null || appt.startDate - groupEnd > 3 * 60 * 60 * 1000) roosterGroups++
+      if (groupEnd === null || appt.endDate > groupEnd) groupEnd = appt.endDate
+    }
+    const logicalCount = (calendar.total - barberAppts.length - roosterAppts.length) + barberGroups + roosterGroups
+    if (logicalCount >= 4) {
+      advice.push(`Heavy day \u2014 ${logicalCount} events. Stay on schedule`)
+    } else if (logicalCount <= 1) {
       advice.push(`Light day \u2014 good time to study or prep the shop`)
     }
 
