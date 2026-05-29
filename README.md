@@ -57,16 +57,7 @@ Telegram is the messaging app the script uses to send you the card. You need a "
 
 **Step 3 — Add your credentials**
 
-In the Files app on your iPhone, go to **iCloud Drive → Scriptable**. Create a folder called `Config` inside it. Inside that folder, create a file called `morning-summary-config.json` with this content:
-
-```json
-{
-  "token": "paste your bot token here",
-  "chatId": "paste your chat ID here"
-}
-```
-
-There is an example file at `Config/morning-summary-config.example.json` in this repo you can use as a starting point.
+In the Files app on your iPhone, go to **iCloud Drive → Scriptable → Config**. Copy `morning-summary-config.example.json`, rename the copy to `morning-summary-config.json`, and replace the placeholder values with your bot token and chat ID.
 
 **Step 4 — Add the script to Scriptable**
 
@@ -118,17 +109,15 @@ It pulls your timetable directly from Magister (via its iCal link) and refreshes
 2. Go to your agenda/calendar settings and find the option to export or subscribe to your calendar
 3. Copy the iCal subscription link (it will start with `https://calendar.magister.net/...`)
 
-**Step 2 — Add the script**
+**Step 2 — Add your iCal URL**
+
+In the Files app on your iPhone, go to **iCloud Drive → Scriptable → Config**. Copy `school-widget-config.example.json`, rename the copy to `school-widget-config.json`, and replace `YOUR_MAGISTER_ICAL_URL` with the link you just copied.
+
+**Step 3 — Add the script**
 
 Open Scriptable, tap `+`, and paste in the full contents of `school-widget/school-widget-script.js`.
 
-At the very top of the script, replace the `ICAL_URL` value with your own Magister iCal link:
-
-```javascript
-const ICAL_URL = "https://calendar.magister.net/api/icalendar/feeds/your-link-here"
-```
-
-**Step 3 — Add the widget to your home screen**
+**Step 4 — Add the widget to your home screen**
 
 1. Long-press your iPhone home screen until icons start jiggling
 2. Tap the `+` button in the top corner
