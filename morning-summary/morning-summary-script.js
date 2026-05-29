@@ -424,7 +424,7 @@ function sortedCals(calendar) {
     .filter(n => calendar.grouped[n]?.length)
     .sort((a, b) => calendar.grouped[a][0].startDate - calendar.grouped[b][0].startDate)
     .map(n => n === "Rooster"
-      ? { name: "School", events: groupRoosterSessions(calendar.grouped[n]) }
+      ? { name: "Rooster", events: groupRoosterSessions(calendar.grouped[n]) }
       : { name: n, events: calendar.grouped[n] })
 }
 
