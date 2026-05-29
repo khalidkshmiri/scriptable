@@ -30,6 +30,25 @@ const WIDGET_SLOTS      = 20
 const DEADLINE_OVERHEAD = 2
 const DEADLINE_SLOTS    = 2
 
+const SUBJECT_NAMES = {
+  netl: "Nederlands",
+  econ: "Economie",
+  wisb: "Wiskunde",
+  fatl: "Frans",
+  ges:  "Geschiedenis",
+  beco: "Beco",
+  pe:   "PE",
+  natk: "Natuurkunde",
+  gpo:  "GPO",
+  cbb:  "CBB",
+}
+
+function expandSubject(summary) {
+  if (!summary) return summary
+  const key = summary.trim().toLowerCase()
+  return SUBJECT_NAMES[key] || summary
+}
+
 const C = {
   bg:          new Color("#0f0f0f"),
   card:        new Color("#1a2a4a"),
@@ -218,7 +237,11 @@ function deadlineDisplay(days, rawDate) {
   if (days === 3) return { text: "In 3 days",                   color: C.warning }
   if (days === 2) return { text: "In 2 days",                   color: C.warning }
   if (days === 1) return { text: "Tomorrow",                    color: C.warning }
-  if (days === 0) return { text: "Today",                       color: C.urgent }
+  if (days === 0) {
+    const d = rawDate instanceof Date ? rawDate : new Date(rawDate)
+    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0
+    return { text: hasTime ? fmtTime(d) : "Today",             color: C.urgent }
+  }
   if (days >= -3) return { text: `${Math.abs(days)}d overdue`,  color: C.urgent }
   return           { text: fmtDate(rawDate),                    color: C.urgent }
 }
@@ -272,7 +295,7 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
   range.textColor = C.secondary
 
   card.addSpacer(5)
-  const name = card.addText(event.summary)
+  const name = card.addText(expandSubject(event.summary))
   name.font      = Font.boldSystemFont(16)
   name.textColor = C.primary
 
@@ -308,7 +331,7 @@ function renderBreakCard(w, brk) {
   dur.textColor = C.secondary
 
   card.addSpacer(5)
-  const next = card.addText("Next: " + brk.next.summary)
+  const next = card.addText("Next: " + expandSubject(brk.next.summary))
   next.font      = Font.boldSystemFont(15)
   next.textColor = C.primary
 
@@ -340,7 +363,7 @@ function renderLessonList(w, events, sectionHeader) {
     const dot = row.addText("• ")
     dot.font      = Font.boldSystemFont(13)
     dot.textColor = C.accent
-    const name = row.addText(ev.summary)
+    const name = row.addText(expandSubject(ev.summary))
     name.font      = Font.systemFont(12)
     name.textColor = C.primary
     row.addSpacer()
