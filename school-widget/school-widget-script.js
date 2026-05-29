@@ -32,13 +32,22 @@ const DEADLINE_SLOTS    = 1   // compact deadline rows cost 1 slot each
 const SUBJECT_NAMES = {
   netl: "Nederlands",
   ellh: "Engels",
+  el:   "Engels",
   econ: "Economie",
   wisb: "Wiskunde",
+  wisa: "Wiskunde A",
+  wis:  "Wiskunde",
   fatl: "Frans",
   ges:  "Geschiedenis",
   beco: "Beco",
   pe:   "PE",
   natk: "Natuurkunde",
+  nat:  "Natuurkunde",
+  bi:   "Biologie",
+  biol: "Biologie",
+  sk:   "Scheikunde",
+  schk: "Scheikunde",
+  ak:   "Aardrijkskunde",
   gpo:  "GPO",
   cbb:  "CBB",
 }
@@ -49,9 +58,22 @@ function parseSummary(summary) {
   const isCancelled = /\b(uitval|vervallen|vrij)\b/.test(lower)
   const testBadge   = /\bse\b/.test(lower) ? "SE" : /\b(pw|toets|proefwerk)\b/.test(lower) ? "PW" : null
   const isTest      = testBadge !== null
-  const dashIdx     = summary.indexOf(" - ")
-  const teacher     = dashIdx >= 0 ? summary.slice(dashIdx + 3).trim() : null
-  const subjectPart = dashIdx >= 0 ? summary.slice(0, dashIdx).trim() : summary.trim()
+  // Support " - ", " — " (em-dash), and "(teacher)" patterns
+  const parenMatch  = summary.match(/^(.*?)\s*\(([^)]+)\)\s*$/)
+  const dashIdx     = summary.indexOf(" - ") >= 0 ? summary.indexOf(" - ")
+                    : summary.indexOf(" — ") >= 0 ? summary.indexOf(" — ")
+                    : -1
+  let teacher, subjectPart
+  if (dashIdx >= 0) {
+    teacher     = summary.slice(dashIdx + 3).trim()
+    subjectPart = summary.slice(0, dashIdx).trim()
+  } else if (parenMatch) {
+    teacher     = parenMatch[2].trim()
+    subjectPart = parenMatch[1].trim()
+  } else {
+    teacher     = null
+    subjectPart = summary.trim()
+  }
   const words   = subjectPart.split(/\s+/)
   const numWord = words.find(w => !isNaN(w) && w !== "")
   const abbrev  = words.find(w => isNaN(w)) ?? words[0]
@@ -288,6 +310,10 @@ function toCalShowTime(date) {
   return Math.floor(d.getTime() / 1000) - 978307200
 }
 
+function isHiddenLocation(loc) {
+  return !loc || loc === "verborgen" || loc === ""
+}
+
 function detectBreak(todayAll, now) {
   const past   = todayAll.filter(e => e.end   <= now)
   const future = todayAll.filter(e => e.start >  now)
@@ -367,16 +393,7 @@ function renderMiniLessonCell(container, event) {
   nm.textColor = isCancelled ? C.cancelledText : C.primary
   nm.lineLimit = 1
 
-  // Teacher abbreviation — inline, right after subject
-  if (teacher) {
-    mainRow.addSpacer(4)
-    const tc = mainRow.addText(teacher)
-    tc.font      = Font.systemFont(9)
-    tc.textColor = C.teacherAbbr
-    tc.lineLimit = 1
-  }
-
-  // Test badge — inline
+  // Test badge — inline after subject
   if (isTest && testBadge) {
     mainRow.addSpacer(3)
     const badge = mainRow.addStack()
@@ -394,16 +411,33 @@ function renderMiniLessonCell(container, event) {
   time.font      = Font.systemFont(9)
   time.textColor = isCancelled ? C.cancelledText : C.secondary
 
-  // Location row
-  const isHiddenLoc = !event.location || event.location === "verborgen" || event.location === ""
-  if (!isHiddenLoc) {
-    const locRow = container.addStack()
-    locRow.layoutHorizontally()
-    if (period !== null) locRow.addSpacer(24) // indent under pill
-    const loc = locRow.addText(event.location)
-    loc.font      = Font.systemFont(9)
-    loc.textColor = C.secondary
-    loc.lineLimit = 1
+  // Sub-row: teacher  ·  classroom  (below subject, left-aligned)
+  const isHiddenLoc = isHiddenLocation(event.location)
+  const hasTeacher  = teacher && !isCancelled
+  if (hasTeacher || !isHiddenLoc) {
+    const subRow = container.addStack()
+    subRow.layoutHorizontally()
+    subRow.centerAlignContent()
+    if (period !== null) subRow.addSpacer(24) // indent under pill
+    if (hasTeacher) {
+      const tc = subRow.addText(teacher)
+      tc.font      = Font.systemFont(9)
+      tc.textColor = C.secondary
+      tc.lineLimit = 1
+    }
+    if (hasTeacher && !isHiddenLoc) {
+      subRow.addSpacer(4)
+      const dot = subRow.addText("·")
+      dot.font      = Font.boldSystemFont(11)
+      dot.textColor = C.secondary
+      subRow.addSpacer(4)
+    }
+    if (!isHiddenLoc) {
+      const loc = subRow.addText(event.location)
+      loc.font      = Font.systemFont(9)
+      loc.textColor = C.secondary
+      loc.lineLimit = 1
+    }
   }
 }
 
@@ -412,7 +446,7 @@ function renderMiniLessonCell(container, event) {
 //    Row 1: label (accent)  ·  countdown (accent)
 //    Row 2: period pill  ·  subject  ·  teacher  ·  time range
 //    Row 3 (optional): location plain text
-function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
+function renderLessonCard(w, event, label, accentColor, cardColor, countdown, progress = null) {
   const { subject, teacher, period, isTest, testBadge, isCancelled } = parseSummary(event.summary)
 
   if (isCancelled) {
@@ -493,27 +527,55 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
     bt.textColor = C.primary
   }
 
-  // Teacher abbreviation — inline next to subject
-  if (teacher) {
-    mainRow.addSpacer(6)
-    const tc = mainRow.addText(teacher)
-    tc.font      = Font.systemFont(10)
-    tc.textColor = C.teacherAbbr
-  }
-
-  // Time range — right-aligned
+  // Time range — right-aligned, prominent
   mainRow.addSpacer()
   const timeRange = mainRow.addText(`${fmtTime(event.start)}–${fmtTime(event.end)}`)
-  timeRange.font      = Font.systemFont(10)
-  timeRange.textColor = isCancelled ? C.cancelledText : C.secondary
+  timeRange.font      = Font.boldSystemFont(13)
+  timeRange.textColor = isCancelled ? C.cancelledText : accentColor
 
-  // ── Row 3 (optional): location — plain text, no emoji
-  const isHiddenLoc = !event.location || event.location === "verborgen" || event.location === ""
-  if (!isHiddenLoc) {
-    content.addSpacer(3)
-    const loc = content.addText(event.location)
-    loc.font      = Font.systemFont(9)
-    loc.textColor = C.secondary
+  // ── Row 3: teacher  ·  classroom  (below subject line)
+  const isHiddenLoc = isHiddenLocation(event.location)
+  const hasTeacher = teacher && !isCancelled
+  if (hasTeacher || !isHiddenLoc) {
+    content.addSpacer(4)
+    const metaRow = content.addStack()
+    metaRow.layoutHorizontally()
+    metaRow.centerAlignContent()
+    if (hasTeacher) {
+      const tc = metaRow.addText(teacher)
+      tc.font      = Font.systemFont(11)
+      tc.textColor = C.secondary
+    }
+    if (hasTeacher && !isHiddenLoc) {
+      metaRow.addSpacer(5)
+      const dot = metaRow.addText("·")
+      dot.font      = Font.boldSystemFont(13)
+      dot.textColor = C.secondary
+      metaRow.addSpacer(5)
+    }
+    if (!isHiddenLoc) {
+      const loc = metaRow.addText(event.location)
+      loc.font      = Font.systemFont(11)
+      loc.textColor = C.secondary
+    }
+  }
+
+  // ── Progress bar — only for NOW card (progress 0.0–1.0 provided)
+  if (progress !== null) {
+    content.addSpacer(6)
+    const barOuter = content.addStack()
+    barOuter.layoutHorizontally()
+    barOuter.cornerRadius = 2
+    barOuter.size = new Size(0, 3)
+    const filledFraction = Math.min(1, Math.max(0, progress))
+    // Filled portion — rendered as a proportionally-sized inner stack
+    const filled = barOuter.addStack()
+    filled.backgroundColor = accentColor
+    filled.size = new Size(filledFraction * 280, 3)
+    // Remaining portion
+    const remaining = barOuter.addStack()
+    remaining.backgroundColor = C.secondary
+    remaining.size = new Size((1 - filledFraction) * 280, 3)
   }
 }
 
@@ -590,7 +652,7 @@ function renderBreakCard(w, brk) {
   timeRange.textColor = C.secondary
 
   // Location — plain text, no emoji
-  const isHiddenLoc = !brk.next.location || brk.next.location === "verborgen" || brk.next.location === ""
+  const isHiddenLoc = isHiddenLocation(brk.next.location)
   if (!isHiddenLoc) {
     content.addSpacer(3)
     const loc = content.addText(brk.next.location)
@@ -800,43 +862,38 @@ async function buildWidget() {
   // ── Header (2 slots)
   let slotsUsed = 2
 
-  // Date — large and prominent
-  const dateTxt = w.addText(
+  w.addSpacer(4)
+
+  // Header row: date (left) · sync indicator (right)
+  const header = w.addStack()
+  header.layoutHorizontally()
+  header.centerAlignContent()
+
+  const dateTxt = header.addText(
     now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
   )
   dateTxt.font      = Font.boldSystemFont(18)
   dateTxt.textColor = C.primary
 
-  w.addSpacer(2)
+  header.addSpacer()
 
-  // Sync indicator row
-  const header = w.addStack()
-  header.layoutHorizontally()
-  header.centerAlignContent()
-
-  // Compute how long ago the last successful fetch was
-  let syncLabel = "synced just now"
+  let syncLabel = ""
   try {
     const cached = loadCache()
     if (cached?.fetchedAt) {
       const syncedAt = new Date(cached.fetchedAt)
-      const diffMin  = Math.round((now - syncedAt) / 60000)
-      if      (diffMin < 1)   syncLabel = "synced just now"
-      else if (diffMin === 1) syncLabel = "synced 1 min ago"
-      else if (diffMin < 60)  syncLabel = `synced ${diffMin} min ago`
-      else {
-        const diffH = Math.floor(diffMin / 60)
-        syncLabel = `synced ${diffH}h ago`
-      }
+      syncLabel = syncedAt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
     }
   } catch {}
 
   const syncDot = header.addText("● ")
-  syncDot.font      = Font.systemFont(8)
+  syncDot.font      = Font.systemFont(7)
   syncDot.textColor = fromCache ? C.warning : C.breakAccent
-  const syncTxt = header.addText(syncLabel)
-  syncTxt.font      = Font.systemFont(10)
-  syncTxt.textColor = C.secondary
+  if (syncLabel) {
+    const syncTxt = header.addText(syncLabel)
+    syncTxt.font      = Font.systemFont(9)
+    syncTxt.textColor = new Color("#152535")
+  }
 
   w.addSpacer(10)
 
@@ -848,6 +905,10 @@ async function buildWidget() {
   }
 
   if (fromCache) {
+    const offlineTxt = w.addText("Offline — using cached schedule")
+    offlineTxt.font      = Font.systemFont(10)
+    offlineTxt.textColor = C.warning
+    w.addSpacer(6)
     slotsUsed += 1
   }
 
@@ -859,8 +920,9 @@ async function buildWidget() {
 
   // CASE 1: Currently in a lesson
   if (current) {
-    const mins = Math.round((current.end - now) / 60000)
-    renderLessonCard(w, current, "NOW", C.accent, C.card, `${mins} min remaining`)
+    const mins     = Math.round((current.end - now) / 60000)
+    const progress = (now - current.start) / (current.end - current.start)
+    renderLessonCard(w, current, "NOW", C.accent, C.card, `${mins} min remaining`, progress)
     slotsUsed += cardSlots(current)
 
     const afterCurrent = todayAll.filter(e => e.start >= current.end)
@@ -908,9 +970,11 @@ async function buildWidget() {
   // CASE 3: Today done or no lessons
   } else {
     if (noLessons) {
-      const t = w.addText("🎉 No lessons today")
-      t.font      = Font.mediumSystemFont(13)
-      t.textColor = C.primary
+      const dow    = now.getDay() // 0 = Sunday, 6 = Saturday
+      const label  = (dow === 0 || dow === 6) ? "WEEKEND" : "HOLIDAY"
+      const lbl    = w.addText(label)
+      lbl.font      = Font.boldSystemFont(13)
+      lbl.textColor = C.nextAccent
     } else {
       const t = w.addText("✓ Done for today")
       t.font      = Font.mediumSystemFont(13)
@@ -931,7 +995,7 @@ async function buildWidget() {
         label,
         C.nextAccent,
         C.nextDayCard,
-        fmtTime(firstLesson.start)
+        ""
       )
       slotsUsed += cardSlots(firstLesson)
       const restOfNextDay = nextDayEvts.slice(1)
