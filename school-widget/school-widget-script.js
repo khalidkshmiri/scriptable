@@ -45,7 +45,11 @@ const SUBJECT_NAMES = {
 }
 
 function parseSummary(summary) {
-  if (!summary) return { subject: summary, teacher: null, period: null }
+  if (!summary) return { subject: summary, teacher: null, period: null, isTest: false, testBadge: null, isCancelled: false }
+  const lower       = summary.toLowerCase()
+  const isCancelled = /\b(uitval|vervallen|vrij)\b/.test(lower)
+  const testBadge   = /\bse\b/.test(lower) ? "SE" : /\b(pw|toets|proefwerk)\b/.test(lower) ? "PW" : null
+  const isTest      = testBadge !== null
   const dashIdx     = summary.indexOf(" - ")
   const teacher     = dashIdx >= 0 ? summary.slice(dashIdx + 3).trim() : null
   const subjectPart = dashIdx >= 0 ? summary.slice(0, dashIdx).trim() : summary.trim()
@@ -53,9 +57,12 @@ function parseSummary(summary) {
   const numWord = words.find(w => !isNaN(w) && w !== "")
   const abbrev  = words.find(w => isNaN(w)) ?? words[0]
   return {
-    subject: SUBJECT_NAMES[abbrev.toLowerCase()] ?? abbrev,
-    teacher: teacher ? teacher.toLowerCase() : null,
-    period:  numWord ? parseInt(numWord, 10) : null,
+    subject:    SUBJECT_NAMES[abbrev.toLowerCase()] ?? abbrev,
+    teacher:    teacher ? teacher.toLowerCase() : null,
+    period:     numWord ? parseInt(numWord, 10) : null,
+    isTest,
+    testBadge,
+    isCancelled,
   }
 }
 
@@ -78,8 +85,13 @@ const C = {
   urgent:      new Color("#e05555"),
   warning:     new Color("#f5a623"),
   error:       new Color("#e05555"),
-  periodBg:    new Color("#2d3e63"),
-  periodText:  new Color("#7aabff"),
+  periodBg:       new Color("#2d3e63"),
+  periodText:     new Color("#7aabff"),
+  tussenuurCard:  new Color("#1e1e22"),
+  tussenuurText:  new Color("#505060"),
+  testCard:       new Color("#3a1a1a"),
+  cancelledCard:  new Color("#1a1a1a"),
+  cancelledText:  new Color("#404040"),
 }
 
 // ─────────────────────────────────────────
@@ -283,23 +295,148 @@ function detectBreak(todayAll, now) {
   }
 }
 
+// Inserts tussenuur placeholder objects between events that have a gap in period numbers.
+// Only events with a known period participate in gap detection.
+function insertTussenuurPlaceholders(events) {
+  const result = []
+  for (let i = 0; i < events.length; i++) {
+    result.push(events[i])
+    if (i < events.length - 1) {
+      const { period: pA } = parseSummary(events[i].summary)
+      const { period: pB } = parseSummary(events[i + 1].summary)
+      if (pA !== null && pB !== null && pB > pA + 1) {
+        result.push({ isTussenuur: true, fromPeriod: pA + 1, toPeriod: pB - 1 })
+      }
+    }
+  }
+  return result
+}
+
+function strikeThrough(str) {
+  return str.split("").map(c => c + "̶").join("")
+}
+
 // How many slots does a lesson card consume?
-// Card base = 5. Add 1 if it has a location line.
+// Card base = 5. Add 1 if it has a location line (including hidden/empty → 💬).
 function cardSlots(event) {
-  return event.location ? 6 : 5
+  return event.location != null ? 6 : 5
 }
 
 // ─────────────────────────────────────────
 //  RENDER FUNCTIONS
 // ─────────────────────────────────────────
 
+// Fixed width of the left column (period pill + time range) in lesson cards.
+const LEFT_COL_W = 64
+
+// Renders the "teacher · room" second line into a vertical container.
+// Honors location filtering: null → omitted, "verborgen"/"" → 💬, else 📍 room.
+function addMetaLine(container, teacher, location, fontSize) {
+  const hasTeacher = !!teacher
+  const hasLoc     = location != null
+  if (!hasTeacher && !hasLoc) return
+  container.addSpacer(2)
+  const row = container.addStack()
+  row.layoutHorizontally()
+  row.centerAlignContent()
+  if (hasTeacher) {
+    const t = row.addText(teacher)
+    t.font      = Font.systemFont(fontSize)
+    t.textColor = C.teacherAbbr
+  }
+  if (hasLoc) {
+    if (hasTeacher) {
+      const sep = row.addText("  ·  ")
+      sep.font      = Font.systemFont(fontSize)
+      sep.textColor = C.teacherAbbr
+    }
+    const isHidden = location === "verborgen" || location === ""
+    const loc = row.addText(isHidden ? "💬" : "📍 " + location)
+    loc.font      = Font.systemFont(fontSize)
+    loc.textColor = C.secondary
+  }
+}
+
+// Two-column lesson body shared by the featured card and the lesson list.
+// Left column (fixed width, right-aligned): period pill above the time range.
+// Right column: subject (bold) + optional test badge, with teacher/room beneath.
+function renderLessonColumns(container, parsed, ev, opts) {
+  const { subject, teacher, period, isTest, testBadge, isCancelled } = parsed
+
+  const body = container.addStack()
+  body.layoutHorizontally()
+  body.topAlignContent()
+
+  // ── Left column: period + time range
+  const left = body.addStack()
+  left.layoutVertically()
+  left.size = new Size(LEFT_COL_W, 0)
+  if (period !== null) {
+    const pRow = left.addStack()
+    pRow.layoutHorizontally()
+    pRow.addSpacer()
+    const pill = pRow.addStack()
+    pill.backgroundColor = C.periodBg
+    pill.cornerRadius    = 4
+    pill.setPadding(1, 5, 1, 5)
+    const pillTxt = pill.addText(String(period))
+    pillTxt.font      = Font.boldSystemFont(opts.periodFontSize)
+    pillTxt.textColor = C.periodText
+    left.addSpacer(3)
+  }
+  const tRow = left.addStack()
+  tRow.layoutHorizontally()
+  tRow.addSpacer()
+  const range = tRow.addText(`${fmtTime(ev.start)}–${fmtTime(ev.end)}`)
+  range.font      = Font.systemFont(opts.timeFontSize)
+  range.textColor = isCancelled ? C.cancelledText : C.secondary
+
+  body.addSpacer(12)
+
+  // ── Right column: subject (+ test badge) and teacher/room beneath
+  const right = body.addStack()
+  right.layoutVertically()
+
+  const subjRow = right.addStack()
+  subjRow.layoutHorizontally()
+  subjRow.centerAlignContent()
+  const displaySubject = isCancelled ? strikeThrough(subject) : subject
+  const name = subjRow.addText(displaySubject)
+  name.font      = Font.boldSystemFont(opts.subjectFontSize)
+  name.textColor = isCancelled ? C.cancelledText : C.primary
+  if (isTest && testBadge) {
+    subjRow.addSpacer(6)
+    const badge = subjRow.addStack()
+    badge.backgroundColor = C.urgent
+    badge.cornerRadius    = 4
+    badge.setPadding(1, 5, 1, 5)
+    const badgeTxt = badge.addText(testBadge)
+    badgeTxt.font      = Font.boldSystemFont(opts.badgeFontSize)
+    badgeTxt.textColor = C.primary
+  }
+
+  addMetaLine(right, teacher, ev.location, opts.metaFontSize)
+}
+
 function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
+  const parsed = parseSummary(event.summary)
+  const { isTest, isCancelled } = parsed
+
+  if (isCancelled) {
+    cardColor   = C.cancelledCard
+    accentColor = C.secondary
+  } else if (isTest) {
+    cardColor   = C.testCard
+    accentColor = C.urgent
+  }
+
   const card = w.addStack()
   card.backgroundColor = cardColor
   card.cornerRadius    = 10
   card.setPadding(10, 12, 10, 12)
   card.layoutVertically()
 
+  // Label + countdown span the full width above the two columns.
   const topRow = card.addStack()
   topRow.layoutHorizontally()
   topRow.centerAlignContent()
@@ -307,46 +444,19 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
   lbl.font      = Font.boldSystemFont(9)
   lbl.textColor = accentColor
   topRow.addSpacer()
-  const range = topRow.addText(`${fmtTime(event.start)} – ${fmtTime(event.end)}`)
-  range.font      = Font.systemFont(9)
-  range.textColor = C.secondary
-
-  card.addSpacer(5)
-  const { subject: evSubject, teacher: evTeacher, period: evPeriod } = parseSummary(event.summary)
-  const nameRow = card.addStack()
-  nameRow.layoutHorizontally()
-  nameRow.centerAlignContent()
-  if (evPeriod !== null) {
-    const pill = nameRow.addStack()
-    pill.backgroundColor = C.periodBg
-    pill.cornerRadius    = 4
-    pill.setPadding(2, 5, 2, 5)
-    const pillTxt = pill.addText(String(evPeriod))
-    pillTxt.font      = Font.boldSystemFont(11)
-    pillTxt.textColor = C.periodText
-    nameRow.addSpacer(7)
-  }
-  const name = nameRow.addText(evSubject)
-  name.font      = Font.boldSystemFont(16)
-  name.textColor = C.primary
-  if (evTeacher) {
-    nameRow.addSpacer(5)
-    const tchr = nameRow.addText(evTeacher)
-    tchr.font      = Font.systemFont(9)
-    tchr.textColor = C.teacherAbbr
-  }
-
-  if (event.location) {
-    card.addSpacer(3)
-    const loc = card.addText("📍 " + event.location)
-    loc.font      = Font.systemFont(10)
-    loc.textColor = C.secondary
-  }
-
-  card.addSpacer(4)
-  const ctd = card.addText(countdown)
+  const ctd = topRow.addText(countdown)
   ctd.font      = Font.mediumSystemFont(10)
   ctd.textColor = accentColor
+
+  card.addSpacer(7)
+
+  renderLessonColumns(card, parsed, event, {
+    periodFontSize:  13,
+    timeFontSize:    10,
+    subjectFontSize: 16,
+    badgeFontSize:   9,
+    metaFontSize:    10,
+  })
 }
 
 function renderBreakCard(w, brk) {
@@ -405,47 +515,47 @@ function renderBreakCard(w, brk) {
   rem.textColor = C.breakAccent
 }
 
+function renderTussenuurRow(w, placeholder) {
+  const row = w.addStack()
+  row.backgroundColor = C.tussenuurCard
+  row.cornerRadius    = 6
+  row.setPadding(5, 10, 5, 10)
+  row.layoutHorizontally()
+  row.centerAlignContent()
+  const periodStr = placeholder.fromPeriod === placeholder.toPeriod
+    ? `uur ${placeholder.fromPeriod}`
+    : `uur ${placeholder.fromPeriod}–${placeholder.toPeriod}`
+  const txt = row.addText(`Tussenuur  ·  ${periodStr}`)
+  txt.font      = Font.systemFont(11)
+  txt.textColor = C.tussenuurText
+}
+
 // Renders a lesson list and returns how many slot units it consumed.
 function renderLessonList(w, events, sectionHeader) {
-  const shown = Math.min(events.length, SETTINGS.maxLaterLessons)
-  const hdr   = w.addText(sectionHeader)
+  const shown         = Math.min(events.length, SETTINGS.maxLaterLessons)
+  const lessonsToShow = events.slice(0, shown)
+  const items         = insertTussenuurPlaceholders(lessonsToShow)
+
+  const hdr = w.addText(sectionHeader)
   hdr.font      = Font.boldSystemFont(9)
   hdr.textColor = C.secondary
   w.addSpacer(4)
 
-  for (const ev of events.slice(0, shown)) {
-    const row = w.addStack()
-    row.layoutHorizontally()
-    row.centerAlignContent()
-    const { subject: lsSubject, teacher: lsTeacher, period: lsPeriod } = parseSummary(ev.summary)
-    if (lsPeriod !== null) {
-      const pill = row.addStack()
-      pill.backgroundColor = C.periodBg
-      pill.cornerRadius    = 4
-      pill.setPadding(2, 5, 2, 5)
-      const pillTxt = pill.addText(String(lsPeriod))
-      pillTxt.font      = Font.boldSystemFont(10)
-      pillTxt.textColor = C.periodText
-      row.addSpacer(6)
-    } else {
-      const dot = row.addText("• ")
-      dot.font      = Font.boldSystemFont(13)
-      dot.textColor = C.accent
+  for (const item of items) {
+    if (item.isTussenuur) {
+      renderTussenuurRow(w, item)
+      w.addSpacer(5)
+      continue
     }
-    const name = row.addText(lsSubject)
-    name.font      = Font.systemFont(12)
-    name.textColor = C.primary
-    if (lsTeacher) {
-      row.addSpacer(4)
-      const tchr = row.addText(lsTeacher)
-      tchr.font      = Font.systemFont(9)
-      tchr.textColor = C.teacherAbbr
-    }
-    row.addSpacer()
-    const time = row.addText(fmtTime(ev.start))
-    time.font      = Font.systemFont(11)
-    time.textColor = C.secondary
-    w.addSpacer(3)
+    const parsed = parseSummary(item.summary)
+    renderLessonColumns(w, parsed, item, {
+      periodFontSize:  11,
+      timeFontSize:    9,
+      subjectFontSize: 13,
+      badgeFontSize:   8,
+      metaFontSize:    9,
+    })
+    w.addSpacer(6)
   }
 
   if (events.length > SETTINGS.maxLaterLessons) {
@@ -454,7 +564,8 @@ function renderLessonList(w, events, sectionHeader) {
     more.textColor = C.secondary
   }
 
-  return 1 + shown  // 1 for section header + n rows
+  const tussenuurCount = items.filter(i => i.isTussenuur).length
+  return 1 + shown * 2 + tussenuurCount  // header + lesson rows (≈2 slots each) + tussenuur rows
 }
 
 function renderDeadlines(w, deadlines, reminders, maxItems) {
