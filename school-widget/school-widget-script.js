@@ -45,15 +45,17 @@ const SUBJECT_NAMES = {
 }
 
 function parseSummary(summary) {
-  if (!summary) return { subject: summary, teacher: null }
+  if (!summary) return { subject: summary, teacher: null, period: null }
   const dashIdx     = summary.indexOf(" - ")
   const teacher     = dashIdx >= 0 ? summary.slice(dashIdx + 3).trim() : null
   const subjectPart = dashIdx >= 0 ? summary.slice(0, dashIdx).trim() : summary.trim()
   const words  = subjectPart.split(/\s+/)
-  const abbrev = words.find(w => isNaN(w)) ?? words[0]
+  const numWord = words.find(w => !isNaN(w) && w !== "")
+  const abbrev  = words.find(w => isNaN(w)) ?? words[0]
   return {
     subject: SUBJECT_NAMES[abbrev.toLowerCase()] ?? abbrev,
     teacher: teacher ? teacher.toLowerCase() : null,
+    period:  numWord ? parseInt(numWord, 10) : null,
   }
 }
 
@@ -76,6 +78,8 @@ const C = {
   urgent:      new Color("#e05555"),
   warning:     new Color("#f5a623"),
   error:       new Color("#e05555"),
+  periodBg:    new Color("#2d3e63"),
+  periodText:  new Color("#7aabff"),
 }
 
 // ─────────────────────────────────────────
@@ -308,10 +312,20 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown) {
   range.textColor = C.secondary
 
   card.addSpacer(5)
-  const { subject: evSubject, teacher: evTeacher } = parseSummary(event.summary)
+  const { subject: evSubject, teacher: evTeacher, period: evPeriod } = parseSummary(event.summary)
   const nameRow = card.addStack()
   nameRow.layoutHorizontally()
   nameRow.centerAlignContent()
+  if (evPeriod !== null) {
+    const pill = nameRow.addStack()
+    pill.backgroundColor = C.periodBg
+    pill.cornerRadius    = 4
+    pill.setPadding(2, 5, 2, 5)
+    const pillTxt = pill.addText(String(evPeriod))
+    pillTxt.font      = Font.boldSystemFont(11)
+    pillTxt.textColor = C.periodText
+    nameRow.addSpacer(7)
+  }
   const name = nameRow.addText(evSubject)
   name.font      = Font.boldSystemFont(16)
   name.textColor = C.primary
@@ -354,10 +368,20 @@ function renderBreakCard(w, brk) {
   dur.textColor = C.secondary
 
   card.addSpacer(5)
-  const { subject: nxSubject, teacher: nxTeacher } = parseSummary(brk.next.summary)
+  const { subject: nxSubject, teacher: nxTeacher, period: nxPeriod } = parseSummary(brk.next.summary)
   const nextRow = card.addStack()
   nextRow.layoutHorizontally()
   nextRow.centerAlignContent()
+  if (nxPeriod !== null) {
+    const pill = nextRow.addStack()
+    pill.backgroundColor = C.periodBg
+    pill.cornerRadius    = 4
+    pill.setPadding(2, 5, 2, 5)
+    const pillTxt = pill.addText(String(nxPeriod))
+    pillTxt.font      = Font.boldSystemFont(11)
+    pillTxt.textColor = C.periodText
+    nextRow.addSpacer(7)
+  }
   const next = nextRow.addText("Next: " + nxSubject)
   next.font      = Font.boldSystemFont(15)
   next.textColor = C.primary
@@ -393,10 +417,21 @@ function renderLessonList(w, events, sectionHeader) {
     const row = w.addStack()
     row.layoutHorizontally()
     row.centerAlignContent()
-    const dot = row.addText("• ")
-    dot.font      = Font.boldSystemFont(13)
-    dot.textColor = C.accent
-    const { subject: lsSubject, teacher: lsTeacher } = parseSummary(ev.summary)
+    const { subject: lsSubject, teacher: lsTeacher, period: lsPeriod } = parseSummary(ev.summary)
+    if (lsPeriod !== null) {
+      const pill = row.addStack()
+      pill.backgroundColor = C.periodBg
+      pill.cornerRadius    = 4
+      pill.setPadding(2, 5, 2, 5)
+      const pillTxt = pill.addText(String(lsPeriod))
+      pillTxt.font      = Font.boldSystemFont(10)
+      pillTxt.textColor = C.periodText
+      row.addSpacer(6)
+    } else {
+      const dot = row.addText("• ")
+      dot.font      = Font.boldSystemFont(13)
+      dot.textColor = C.accent
+    }
     const name = row.addText(lsSubject)
     name.font      = Font.systemFont(12)
     name.textColor = C.primary
