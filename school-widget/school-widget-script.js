@@ -338,32 +338,27 @@ function cardSlots(event) {
 const GRID_CELL_W = 142
 
 // ── Mini lesson cell for the two-column grid.
-//    One compact line: [period pill] subject  teacher         start-time
+//    Row 1: [period pill] subject  teacher  [badge]  time
+//    Row 2 (optional): location
 function renderMiniLessonCell(container, event) {
   const { subject, teacher, period, isTest, testBadge, isCancelled } = parseSummary(event.summary)
 
-  const row = container.addStack()
-  row.layoutHorizontally()
-  row.centerAlignContent()
+  // Single horizontal row: pill · subject · teacher · badge · spacer · time
+  const mainRow = container.addStack()
+  mainRow.layoutHorizontally()
+  mainRow.centerAlignContent()
 
-  // Period pill — left-aligned, no leading spacer
+  // Period pill — left of subject, same row
   if (period !== null) {
-    const pill = container.addStack()
-    pill.layoutHorizontally()
-    const p = pill.addStack()
+    const p = mainRow.addStack()
     p.backgroundColor = C.periodBg
     p.cornerRadius    = 4
     p.setPadding(1, 5, 1, 5)
     const pt = p.addText(String(period))
     pt.font      = Font.boldSystemFont(9)
     pt.textColor = C.periodText
-    container.addSpacer(4)
+    mainRow.addSpacer(5)
   }
-
-  // Main content row: subject + teacher + test badge + time
-  const mainRow = container.addStack()
-  mainRow.layoutHorizontally()
-  mainRow.centerAlignContent()
 
   // Subject
   const displaySubject = isCancelled ? strikeThrough(subject) : subject
@@ -398,6 +393,18 @@ function renderMiniLessonCell(container, event) {
   const time = mainRow.addText(fmtTime(event.start))
   time.font      = Font.systemFont(9)
   time.textColor = isCancelled ? C.cancelledText : C.secondary
+
+  // Location row
+  const isHiddenLoc = !event.location || event.location === "verborgen" || event.location === ""
+  if (!isHiddenLoc) {
+    const locRow = container.addStack()
+    locRow.layoutHorizontally()
+    if (period !== null) locRow.addSpacer(24) // indent under pill
+    const loc = locRow.addText(event.location)
+    loc.font      = Font.systemFont(9)
+    loc.textColor = C.secondary
+    loc.lineLimit = 1
+  }
 }
 
 // ── Featured lesson card (NOW / NEXT LESSON / next-day first).
@@ -772,24 +779,7 @@ async function buildWidget() {
 
   const now = new Date()
 
-  // ── Header (2 slots)
-  let slotsUsed = 2
-  const header = w.addStack()
-  header.layoutHorizontally()
-  header.centerAlignContent()
-  const dayTxt = header.addText(
-    now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })
-  )
-  dayTxt.font      = Font.systemFont(11)
-  dayTxt.textColor = C.secondary
-  header.addSpacer()
-  const timeTxt = header.addText(fmtTime(now))
-  timeTxt.font      = Font.boldSystemFont(14)
-  timeTxt.textColor = C.primary
-
-  w.addSpacer(10)
-
-  // ── Fetch
+  // ── Fetch (before header so fromCache is known for the sync dot colour)
   let allEvents = [], deadlines = [], reminders = []
   let fromCache = false, error = false
 
@@ -807,6 +797,49 @@ async function buildWidget() {
     error = true
   }
 
+  // ── Header (2 slots)
+  let slotsUsed = 2
+
+  // Date — large and prominent
+  const dateTxt = w.addText(
+    now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
+  )
+  dateTxt.font      = Font.boldSystemFont(18)
+  dateTxt.textColor = C.primary
+
+  w.addSpacer(2)
+
+  // Sync indicator row
+  const header = w.addStack()
+  header.layoutHorizontally()
+  header.centerAlignContent()
+
+  // Compute how long ago the last successful fetch was
+  let syncLabel = "synced just now"
+  try {
+    const cached = loadCache()
+    if (cached?.fetchedAt) {
+      const syncedAt = new Date(cached.fetchedAt)
+      const diffMin  = Math.round((now - syncedAt) / 60000)
+      if      (diffMin < 1)   syncLabel = "synced just now"
+      else if (diffMin === 1) syncLabel = "synced 1 min ago"
+      else if (diffMin < 60)  syncLabel = `synced ${diffMin} min ago`
+      else {
+        const diffH = Math.floor(diffMin / 60)
+        syncLabel = `synced ${diffH}h ago`
+      }
+    }
+  } catch {}
+
+  const syncDot = header.addText("● ")
+  syncDot.font      = Font.systemFont(8)
+  syncDot.textColor = fromCache ? C.warning : C.breakAccent
+  const syncTxt = header.addText(syncLabel)
+  syncTxt.font      = Font.systemFont(10)
+  syncTxt.textColor = C.secondary
+
+  w.addSpacer(10)
+
   if (error) {
     const t = w.addText("⚠ Could not load data")
     t.textColor = C.error
@@ -816,10 +849,6 @@ async function buildWidget() {
 
   if (fromCache) {
     slotsUsed += 1
-    const note = w.addText("📶 Offline — cached schedule")
-    note.font      = Font.systemFont(9)
-    note.textColor = C.warning
-    w.addSpacer(6)
   }
 
   // ── Schedule logic
@@ -902,7 +931,7 @@ async function buildWidget() {
         label,
         C.nextAccent,
         C.nextDayCard,
-        `First lesson at ${fmtTime(firstLesson.start)}`
+        fmtTime(firstLesson.start)
       )
       slotsUsed += cardSlots(firstLesson)
       const restOfNextDay = nextDayEvts.slice(1)
