@@ -7,9 +7,10 @@
 //  v5: Deep Ocean · two-column grid · slim cards
 // ─────────────────────────────────────────
 
-let   ICAL_URL     = ""   // loaded from Config/school-widget-config.json
-const CAL_NAME     = "School"
-const TAP_URL      = "magister://"
+let ICAL_URL            = ""         // loaded from Config/school-widget-config.json
+let CAL_NAME_DEADLINES  = "School"   // overridden by config calendarName
+let CAL_NAME_REMINDERS  = "School"   // overridden by config remindersName
+let TAP_URL             = "magister://" // overridden by config tapUrl
 const CACHE_FOLDER = "Cache"
 const CACHE_FILE   = "school_ical.json"
 
@@ -222,7 +223,7 @@ function parseIcalDate(line) {
 
 async function fetchDeadlines() {
   const allCals = await Calendar.forEvents()
-  const cal     = allCals.find(c => c.title === CAL_NAME)
+  const cal     = allCals.find(c => c.title === CAL_NAME_DEADLINES)
   if (!cal) return []
   const now    = new Date()
   const past   = new Date(now.getTime() - SETTINGS.pastDays   * 86400000)
@@ -236,7 +237,7 @@ async function fetchDeadlines() {
 
 async function fetchReminders() {
   const allLists = await Calendar.forReminders()
-  const list     = allLists.find(c => c.title === CAL_NAME)
+  const list     = allLists.find(c => c.title === CAL_NAME_REMINDERS)
   if (!list) return []
   const all = await Reminder.all([list])
   return all
@@ -1037,9 +1038,12 @@ async function loadConfig() {
   const path = fm.joinPath(fm.documentsDirectory(), "Config/school-widget-config.json")
   if (!fm.fileExists(path)) throw new Error("Config/school-widget-config.json not found — copy the .example file and fill in your Magister iCal URL")
   await fm.downloadFileFromiCloud(path)
-  const { icalUrl } = JSON.parse(fm.readString(path))
-  if (!icalUrl || icalUrl === "YOUR_MAGISTER_ICAL_URL") throw new Error("Set icalUrl in Config/school-widget-config.json")
-  ICAL_URL = icalUrl
+  const data = JSON.parse(fm.readString(path))
+  if (!data.icalUrl || data.icalUrl === "YOUR_ICAL_FEED_URL") throw new Error("Set icalUrl in Config/school-widget-config.json")
+  ICAL_URL           = data.icalUrl
+  CAL_NAME_DEADLINES = data.calendarName  ?? CAL_NAME_DEADLINES
+  CAL_NAME_REMINDERS = data.remindersName ?? CAL_NAME_DEADLINES
+  if (data.tapUrl)   TAP_URL = data.tapUrl
 }
 
 // ─────────────────────────────────────────

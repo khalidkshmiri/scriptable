@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy this file to school-widget-config.json and fill in your values. Only icalUrl is required.",
+  "icalUrl": "YOUR_ICAL_FEED_URL",
+  "calendarName": "School",
+  "remindersName": "School",
+  "tapUrl": "magister://"
+}
