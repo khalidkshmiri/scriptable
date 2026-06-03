@@ -554,24 +554,33 @@ async function getReminders() {
 // ─── DEPARTURE ────────────────────────────────────────
 async function geocodeAddress(address) {
   try {
-    const req = new Request(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=nl`
-    )
-    req.headers = { "User-Agent": "MorningSummaryScript/1.0" }
-    const res = await req.loadJSON()
-    if (!res.length) return null
-    return { lat: parseFloat(res[0].lat), lon: parseFloat(res[0].lon) }
+    const lines = address.split("\n").map(l => l.trim()).filter(Boolean)
+    const candidates = lines.length > 1
+      ? [lines.slice(1).join(", "), lines.join(", ")]  // street-only first, then full
+      : [lines.join(", ")]
+    for (const q of candidates) {
+      const req = new Request(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=nl`
+      )
+      req.headers = { "User-Agent": "MorningSummaryScript/1.0" }
+      const res = await req.loadJSON()
+      if (res.length) return { lat: parseFloat(res[0].lat), lon: parseFloat(res[0].lon) }
+    }
+    return null
   } catch { return null }
 }
 
 async function get9292LocationId(lat, lon) {
   try {
     const req = new Request(
-      `https://api.9292.nl/0.1/locations/latlong/${lat},${lon}?lang=nl-NL&rows=1`
+      `https://web-api.9292.nl/0.1/locations/latlong/${lat},${lon}?lang=nl-NL&rows=1`
     )
-    const res = await req.loadJSON()
+    req.headers = { "User-Agent": "MorningSummaryScript/1.0" }
+    const raw = await req.loadString()
+    console.log("[depart] 9292 loc raw: " + raw.slice(0, 300))
+    const res = JSON.parse(raw)
     return res.locations?.[0]?.id ?? null
-  } catch { return null }
+  } catch (e) { console.log("[depart] 9292 loc error: " + e); return null }
 }
 
 async function getTravelMinutes(fromLat, fromLon, toLat, toLon, mode) {
@@ -581,6 +590,7 @@ async function getTravelMinutes(fromLat, fromLon, toLat, toLon, mode) {
         get9292LocationId(fromLat, fromLon),
         get9292LocationId(toLat, toLon)
       ])
+      console.log("[depart] 9292 ids: from=" + fromId + " to=" + toId)
       if (!fromId || !toId) return null
 
       const now = new Date()
@@ -588,10 +598,11 @@ async function getTravelMinutes(fromLat, fromLon, toLat, toLon, mode) {
       const dt  = `${now.getFullYear()}${p2(now.getMonth()+1)}${p2(now.getDate())}_${p2(now.getHours())}${p2(now.getMinutes())}`
 
       const req = new Request(
-        `https://api.9292.nl/0.1/journeys?lang=nl-NL&sequence=1&from=${fromId}&to=${toId}&searchType=departure&dateTime=${dt}&interchangeTime=standard`
+        `https://web-api.9292.nl/0.1/journeys?lang=nl-NL&sequence=1&from=${fromId}&to=${toId}&searchType=departure&dateTime=${dt}&interchangeTime=standard`
       )
       const res     = await req.loadJSON()
       const journey = res.journeys?.[0]
+      console.log("[depart] 9292 journey: " + JSON.stringify(journey?.departure) + " → " + JSON.stringify(journey?.arrival))
       if (!journey) return null
 
       // Try journey-level times first, then first/last leg
@@ -632,6 +643,7 @@ async function getDeparture(calendar, loc) {
     }
     allEvents.sort((a, b) => a.startDate - b.startDate)
 
+    console.log("[depart] future events: " + allEvents.map(e => e.title + " @ " + e.location).join(", "))
     for (const event of allEvents) {
       let destination, mode, buffer
 
@@ -641,7 +653,7 @@ async function getDeparture(calendar, loc) {
         buffer      = CFG.roosterBuffer
       } else {
         const evtLoc = event.location || ""
-        if (!evtLoc || evtLoc.includes(CFG.homeKeyword)) continue
+        if (!evtLoc || evtLoc.includes(CFG.homeKeyword)) { console.log("[depart] skip " + event.title + ": no loc or home match"); continue }
         const notes = event.notes || ""
         mode        = notes.includes("#drive") ? "drive"
                     : notes.includes("#walk")  ? "walk"
@@ -651,10 +663,13 @@ async function getDeparture(calendar, loc) {
         buffer      = 0
       }
 
+      console.log("[depart] trying: " + event.title + " → " + destination + " via " + mode)
       const toLoc = await geocodeAddress(destination)
+      console.log("[depart] geocode: " + JSON.stringify(toLoc))
       if (!toLoc) continue
 
       const travelMins = await getTravelMinutes(loc.latitude, loc.longitude, toLoc.lat, toLoc.lon, mode)
+      console.log("[depart] travelMins: " + travelMins)
       if (travelMins == null) continue
 
       const modeNames     = { drive: "car", walk: "walking", bike: "cycling", transit: "public transport" }
