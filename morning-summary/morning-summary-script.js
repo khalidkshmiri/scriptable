@@ -13,10 +13,13 @@
 
 // ─── CONFIG ───────────────────────────────────────────
 const CFG = {
-  token:     "",
-  chatId:    "",
-  calendars: ["Events","Family","Rooster","School","Personal","Barber Appointments","Admin","Other"],
-  thresh:    { wind: 25, cold: 3, warm: 25, uv: 6 }
+  token:         "",
+  chatId:        "",
+  calendars:     ["Events","Family","Rooster","School","Personal","Barber Appointments","Admin","Other"],
+  thresh:        { wind: 25, cold: 3, warm: 25, uv: 6 },
+  homeKeyword:   "Straatweg",
+  schoolAddress: "Wolfert Tweetalig, Rotterdam",
+  roosterBuffer: 15
 }
 
 async function loadConfig() {
@@ -25,9 +28,12 @@ async function loadConfig() {
   if (!fm.fileExists(path)) throw new Error("Config/morning-summary-config.json not found in Scriptable folder")
   await fm.downloadFileFromiCloud(path)
   const raw = fm.readString(path)
-  const { token, chatId } = JSON.parse(raw)
-  CFG.token = token
-  CFG.chatId = chatId
+  const cfg = JSON.parse(raw)
+  CFG.token = cfg.token
+  CFG.chatId = cfg.chatId
+  if (cfg.homeKeyword   !== undefined) CFG.homeKeyword   = cfg.homeKeyword
+  if (cfg.schoolAddress !== undefined) CFG.schoolAddress = cfg.schoolAddress
+  if (cfg.roosterBuffer !== undefined) CFG.roosterBuffer = cfg.roosterBuffer
 }
 
 // ─── DESIGN ───────────────────────────────────────────
@@ -53,7 +59,8 @@ const C = {
   textMain:    new Color("#F0E9DA"),   // warm cream
   textSub:     new Color("#8A8070"),   // warm taupe
   textTime:    new Color("#B7AC92"),   // muted warm — times
-  hair:        new Color("#2E2619")    // hairline divider
+  hair:        new Color("#2E2619"),   // hairline divider
+  cardDepart:  new Color("#1A161C")   // dark purple-grey — departure
 }
 
 // Type system — distinctive iOS-native pairing
@@ -391,11 +398,28 @@ function renderAdvice(dc, y, advice) {
   return y + cardH
 }
 
+function renderDeparture(dc, y, dep) {
+  const cardH  = S.cp + S.slH + sc(19) + sc(17) + S.cp
+  const innerW = W - PAD * 2 - S.cp * 2
+  if (dc) {
+    rrect(dc, PAD, y, W - PAD * 2, cardH, C.cardDepart)
+    const cx = PAD + S.cp
+    let cy = y + S.cp
+    dtxt(dc, trk("DEPARTURE"), cx, cy, F.secLbl, C.accent)
+    cy += S.slH
+    dtxtIn(dc, `Leave by ${fmt(dep.departureTime)} for ${dep.eventTitle}`, cx, cy, innerW, sc(19), F.wMain, C.textMain)
+    cy += sc(19)
+    dtxt(dc, `${dep.travelMins} min by ${dep.modeName}`, cx, cy, F.wSub, C.textSub)
+  }
+  return y + cardH
+}
+
 // ─── LAYOUT ───────────────────────────────────────────
 function runLayout(dc, data) {
   let y = 0
   y = renderHeader(dc, y, data);   y += S.sg
-  if (data.weather.ok)     { y = renderWeather(dc, y, data.weather);     y += S.sg }
+  if (data.weather.ok)    { y = renderWeather(dc, y, data.weather);     y += S.sg }
+  if (data.departure.ok) { y = renderDeparture(dc, y, data.departure); y += S.sg }
   y = renderCalendar(dc, y, data.calendar)
   if (data.reminders.ok)   { y += S.sg; y = renderReminders(dc, y, data.reminders) }
   if (data.advice.length)  { y += S.sg; y = renderAdvice(dc, y, data.advice) }
@@ -429,11 +453,8 @@ function sortedCals(calendar) {
 }
 
 // ─── DATA FETCHING ────────────────────────────────────
-async function getWeather() {
+async function getWeather(loc) {
   try {
-    Location.setAccuracyToHundredMeters()
-    const loc = await Location.current()
-
     const [geo, res] = await Promise.all([
       Location.reverseGeocode(loc.latitude, loc.longitude),
       new Request(
@@ -530,9 +551,126 @@ async function getReminders() {
   } catch { return { ok: false, overdue: [], dueToday: [], upcoming: [] } }
 }
 
+// ─── DEPARTURE ────────────────────────────────────────
+async function geocodeAddress(address) {
+  try {
+    const req = new Request(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=nl`
+    )
+    req.headers = { "User-Agent": "MorningSummaryScript/1.0" }
+    const res = await req.loadJSON()
+    if (!res.length) return null
+    return { lat: parseFloat(res[0].lat), lon: parseFloat(res[0].lon) }
+  } catch { return null }
+}
+
+async function get9292LocationId(lat, lon) {
+  try {
+    const req = new Request(
+      `https://api.9292.nl/0.1/locations/latlong/${lat},${lon}?lang=nl-NL&rows=1`
+    )
+    const res = await req.loadJSON()
+    return res.locations?.[0]?.id ?? null
+  } catch { return null }
+}
+
+async function getTravelMinutes(fromLat, fromLon, toLat, toLon, mode) {
+  try {
+    if (mode === "transit") {
+      const [fromId, toId] = await Promise.all([
+        get9292LocationId(fromLat, fromLon),
+        get9292LocationId(toLat, toLon)
+      ])
+      if (!fromId || !toId) return null
+
+      const now = new Date()
+      const p2  = n => String(n).padStart(2, "0")
+      const dt  = `${now.getFullYear()}${p2(now.getMonth()+1)}${p2(now.getDate())}_${p2(now.getHours())}${p2(now.getMinutes())}`
+
+      const req = new Request(
+        `https://api.9292.nl/0.1/journeys?lang=nl-NL&sequence=1&from=${fromId}&to=${toId}&searchType=departure&dateTime=${dt}&interchangeTime=standard`
+      )
+      const res     = await req.loadJSON()
+      const journey = res.journeys?.[0]
+      if (!journey) return null
+
+      // Try journey-level times first, then first/last leg
+      const legs   = journey.legs ?? []
+      const depStr = journey.departure?.time ?? legs[0]?.departure?.time ?? legs[0]?.from?.dateTime
+      const arrStr = journey.arrival?.time   ?? legs[legs.length-1]?.arrival?.time ?? legs[legs.length-1]?.to?.dateTime
+      if (!depStr || !arrStr) return null
+      return Math.ceil((new Date(arrStr) - new Date(depStr)) / 60000)
+    }
+
+    // OSRM-based routing for drive / walk / bike
+    const osrmBase = mode === "drive"
+      ? "https://routing.openstreetmap.de/routed-car"
+      : mode === "walk"
+      ? "https://routing.openstreetmap.de/routed-foot"
+      : "https://routing.openstreetmap.de/routed-bike"
+    const req = new Request(
+      `${osrmBase}/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=false`
+    )
+    const res      = await req.loadJSON()
+    const duration = res.routes?.[0]?.duration
+    if (duration == null) return null
+    return Math.ceil(duration / 60)
+  } catch { return null }
+}
+
+async function getDeparture(calendar, loc) {
+  try {
+    if (!calendar.ok) return { ok: false }
+    const now = new Date()
+
+    // Collect all timed events starting in the future, sorted by start time
+    const allEvents = []
+    for (const events of Object.values(calendar.grouped)) {
+      for (const e of events) {
+        if (!e.isAllDay && e.startDate > now) allEvents.push(e)
+      }
+    }
+    allEvents.sort((a, b) => a.startDate - b.startDate)
+
+    for (const event of allEvents) {
+      let destination, mode, buffer
+
+      if (event.calendar.title === "Rooster") {
+        destination = CFG.schoolAddress
+        mode        = "transit"
+        buffer      = CFG.roosterBuffer
+      } else {
+        const evtLoc = event.location || ""
+        if (!evtLoc || evtLoc.includes(CFG.homeKeyword)) continue
+        const notes = event.notes || ""
+        mode        = notes.includes("#drive") ? "drive"
+                    : notes.includes("#walk")  ? "walk"
+                    : notes.includes("#bike")  ? "bike"
+                    : "transit"
+        destination = evtLoc
+        buffer      = 0
+      }
+
+      const toLoc = await geocodeAddress(destination)
+      if (!toLoc) continue
+
+      const travelMins = await getTravelMinutes(loc.latitude, loc.longitude, toLoc.lat, toLoc.lon, mode)
+      if (travelMins == null) continue
+
+      const modeNames     = { drive: "car", walk: "walking", bike: "cycling", transit: "public transport" }
+      const departureTime = new Date(event.startDate.getTime() - (travelMins + buffer) * 60000)
+      return { ok: true, departureTime, eventTitle: event.title, travelMins, modeName: modeNames[mode] }
+    }
+    return { ok: false }
+  } catch { return { ok: false } }
+}
+
 // ─── ADVICE ───────────────────────────────────────────
-function buildAdvice(weather, calendar) {
+function buildAdvice(weather, calendar, departure) {
   const advice = [], now = new Date()
+  if (departure && departure.ok) {
+    advice.push(`Leave by ${fmt(departure.departureTime)} for ${departure.eventTitle} — ${departure.travelMins} min by ${departure.modeName}`)
+  }
   if (calendar.ok) {
     const all = []
     for (const n of CFG.calendars) if (calendar.grouped[n]) all.push(...calendar.grouped[n])
@@ -620,14 +758,17 @@ async function sendPhoto(image, caption) {
 async function main() {
   await loadConfig()
   const now = new Date()
+  Location.setAccuracyToHundredMeters()
+  const loc = await Location.current()
   const [weather, calendar, reminders] = await Promise.all([
-    getWeather(), getCalendar(), getReminders()
+    getWeather(loc), getCalendar(), getReminders()
   ])
-  const advice = buildAdvice(weather, calendar)
+  const departure = await getDeparture(calendar, loc)
+  const advice = buildAdvice(weather, calendar, departure)
   const battery  = Math.round(Device.batteryLevel() * 100)
   const charging = Device.isCharging()
   const data = {
-    weather, calendar, reminders, advice,
+    weather, calendar, reminders, advice, departure,
     city:    weather.city || "",
     dateStr: fmtDate(now),
     timeStr: fmt(now),
