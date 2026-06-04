@@ -20,7 +20,11 @@ const SETTINGS = {
   maxDeadlines:      5,   // increased — compact rows
   pastDays:          30,
   futureDays:        30,
-  breakThresholdMin: 10,
+  tussenuurThresholdMin: 30, // > 30 min gap → tussenuur; ≤ 30 min → break
+  schoolBreaks: [
+    { startH: 10, startM: 45, endH: 11, endM: 15 },
+    { startH: 13, startM: 30, endH: 14, endM:  0 },
+  ],
   nextDayLookAhead:  30,
 }
 
@@ -317,32 +321,99 @@ function isHiddenLocation(loc) {
   return !loc || loc === "verborgen"
 }
 
-function detectBreak(todayAll, now) {
+// Splits a time gap at fixed school break boundaries.
+// Returns an array of {type:'break'|'tussenuur', start, end, durationMin}.
+function getGapSegments(gapStart, gapEnd) {
+  const d = gapStart
+  const breaks = SETTINGS.schoolBreaks
+    .map(b => ({
+      start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), b.startH, b.startM),
+      end:   new Date(d.getFullYear(), d.getMonth(), d.getDate(), b.endH,   b.endM),
+    }))
+    .filter(b => b.start < gapEnd && b.end > gapStart)
+
+  const segs   = []
+  let cursor   = gapStart
+
+  for (const brk of breaks) {
+    // Segment before this school break
+    if (brk.start > cursor) {
+      const min = Math.round((brk.start - cursor) / 60000)
+      segs.push({ type: min > SETTINGS.tussenuurThresholdMin ? 'tussenuur' : 'break',
+                  start: cursor, end: brk.start, durationMin: min })
+    }
+    // The school break itself (clipped to gap bounds)
+    const brkEnd = brk.end < gapEnd ? brk.end : gapEnd
+    if (brkEnd > Math.max(brk.start, cursor)) {
+      const min = Math.round((brkEnd - Math.max(brk.start, cursor)) / 60000)
+      segs.push({ type: 'break', start: Math.max(brk.start, cursor), end: brkEnd, durationMin: min })
+      cursor = brkEnd
+    }
+  }
+
+  // Remainder after all school breaks
+  if (cursor < gapEnd) {
+    const min = Math.round((gapEnd - cursor) / 60000)
+    segs.push({ type: min > SETTINGS.tussenuurThresholdMin ? 'tussenuur' : 'break',
+                start: cursor, end: gapEnd, durationMin: min })
+  }
+
+  return segs
+}
+
+function detectCurrentGap(todayAll, now) {
   const past   = todayAll.filter(e => e.end   <= now)
   const future = todayAll.filter(e => e.start >  now)
   if (!past.length || !future.length) return null
   const lastDone = past[past.length - 1]
   const nextUp   = future[0]
-  const gapMin   = Math.round((nextUp.start - lastDone.end) / 60000)
-  if (gapMin < SETTINGS.breakThresholdMin) return null
+  const totalMin = Math.round((nextUp.start - lastDone.end) / 60000)
+  if (totalMin < 1) return null
+
+  const segs   = getGapSegments(lastDone.end, nextUp.start)
+  const curSeg = segs.find(s => now >= s.start && now < s.end) ?? segs[segs.length - 1]
+
+  const { period: pA } = parseSummary(lastDone.summary)
+  const { period: pB } = parseSummary(nextUp.summary)
+
   return {
-    total:     gapMin,
-    remaining: Math.round((nextUp.start - now) / 60000),
-    next:      nextUp,
+    type:         curSeg.type,
+    total:        totalMin,
+    remaining:    Math.round((nextUp.start - now) / 60000),
+    next:         nextUp,
+    fromPeriod:   pA !== null ? pA + 1 : null,
+    toPeriod:     pB !== null ? pB - 1 : null,
   }
 }
 
-// Inserts tussenuur placeholder objects between events that have a gap in period numbers.
-// Only events with a known period participate in gap detection.
-function insertTussenuurPlaceholders(events) {
+// Inserts break/tussenuur placeholder objects between events based on time gaps.
+// Splits at school break boundaries so breaks and tussenuren are never merged.
+function insertGapPlaceholders(events) {
   const result = []
   for (let i = 0; i < events.length; i++) {
     result.push(events[i])
     if (i < events.length - 1) {
-      const { period: pA } = parseSummary(events[i].summary)
-      const { period: pB } = parseSummary(events[i + 1].summary)
-      if (pA !== null && pB !== null && pB > pA + 1) {
-        result.push({ isTussenuur: true, fromPeriod: pA + 1, toPeriod: pB - 1 })
+      const evA    = events[i]
+      const evB    = events[i + 1]
+      const gapMin = Math.round((evB.start - evA.end) / 60000)
+      if (gapMin < 1) continue
+
+      const { period: pA } = parseSummary(evA.summary)
+      const { period: pB } = parseSummary(evB.summary)
+      const segs  = getGapSegments(evA.end, evB.start)
+      const tSegs = segs.filter(s => s.type === 'tussenuur')
+
+      for (const seg of segs) {
+        if (seg.type === 'tussenuur') {
+          // Derive period range only when one tussenuur segment and both events have periods
+          const fp = tSegs.length === 1 && pA !== null ? pA + 1 : null
+          const tp = tSegs.length === 1 && pB !== null ? pB - 1 : null
+          result.push({ isTussenuur: true, start: seg.start, end: seg.end,
+                        durationMin: seg.durationMin, fromPeriod: fp, toPeriod: tp })
+        } else {
+          result.push({ isBreakPlaceholder: true, start: seg.start, end: seg.end,
+                        durationMin: seg.durationMin })
+        }
       }
     }
   }
@@ -499,10 +570,12 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown, pr
   const lbl = topRow.addText(label)
   lbl.font      = Font.boldSystemFont(8)
   lbl.textColor = accentColor
-  topRow.addSpacer()
-  const ctd = topRow.addText(countdown)
-  ctd.font      = Font.systemFont(10)
-  ctd.textColor = accentColor
+  if (countdown) {
+    topRow.addSpacer()
+    const ctd = topRow.addText(countdown)
+    ctd.font      = Font.systemFont(10)
+    ctd.textColor = accentColor
+  }
 
   content.addSpacer(5)
 
@@ -682,12 +755,124 @@ function renderTussenuurRow(w, placeholder) {
   row.setPadding(4, 10, 4, 10)
   row.layoutHorizontally()
   row.centerAlignContent()
-  const periodStr = placeholder.fromPeriod === placeholder.toPeriod
-    ? `uur ${placeholder.fromPeriod}`
-    : `uur ${placeholder.fromPeriod}–${placeholder.toPeriod}`
-  const txt = row.addText(`Tussenuur  ·  ${periodStr}`)
+
+  let label = "Tussenuur"
+  if (placeholder.fromPeriod !== null && placeholder.toPeriod !== null) {
+    const pStr = placeholder.fromPeriod === placeholder.toPeriod
+      ? `uur ${placeholder.fromPeriod}`
+      : `uur ${placeholder.fromPeriod}–${placeholder.toPeriod}`
+    label += `  ·  ${pStr}`
+  }
+
+  const txt = row.addText(label)
   txt.font      = Font.systemFont(10)
-  txt.textColor = C.tussenuurText
+  txt.textColor = C.secondary
+  row.addSpacer()
+  const dur = row.addText(`${placeholder.durationMin} min`)
+  dur.font      = Font.systemFont(9)
+  dur.textColor = C.secondary
+}
+
+function renderBreakPlaceholderRow(w, placeholder) {
+  const row = w.addStack()
+  row.backgroundColor = C.breakCard
+  row.cornerRadius    = 5
+  row.setPadding(4, 10, 4, 10)
+  row.layoutHorizontally()
+  row.centerAlignContent()
+  const txt = row.addText("Pauze")
+  txt.font      = Font.systemFont(10)
+  txt.textColor = C.breakAccent
+  row.addSpacer()
+  const dur = row.addText(`${placeholder.durationMin} min`)
+  dur.font      = Font.systemFont(9)
+  dur.textColor = C.secondary
+}
+
+function renderTussenuurCard(w, gap) {
+  const { subject: nxSubject, teacher: nxTeacher, period: nxPeriod } = parseSummary(gap.next.summary)
+
+  const card = w.addStack()
+  card.backgroundColor = C.card
+  card.cornerRadius    = 12
+  card.layoutHorizontally()
+  card.topAlignContent()
+  card.setPadding(0, 0, 0, 0)
+
+  const strip = card.addStack()
+  strip.backgroundColor = C.nextAccent
+  strip.size = new Size(4, 0)
+
+  card.addSpacer(10)
+
+  const content = card.addStack()
+  content.layoutVertically()
+  content.setPadding(8, 0, 8, 12)
+
+  // Row 1: TUSSENUUR · period · spacer · X min left
+  const topRow = content.addStack()
+  topRow.layoutHorizontally()
+  topRow.centerAlignContent()
+  const lbl = topRow.addText("TUSSENUUR")
+  lbl.font      = Font.boldSystemFont(8)
+  lbl.textColor = C.nextAccent
+
+  if (gap.fromPeriod !== null && gap.toPeriod !== null) {
+    topRow.addSpacer(6)
+    const pStr = gap.fromPeriod === gap.toPeriod
+      ? `uur ${gap.fromPeriod}`
+      : `uur ${gap.fromPeriod}–${gap.toPeriod}`
+    const per = topRow.addText(pStr)
+    per.font      = Font.systemFont(9)
+    per.textColor = C.secondary
+  }
+
+  topRow.addSpacer()
+  const rem = topRow.addText(`${gap.remaining} min left`)
+  rem.font      = Font.mediumSystemFont(10)
+  rem.textColor = C.nextAccent
+
+  content.addSpacer(5)
+
+  // Row 2: period pill · Next: subject · teacher · time range
+  const mainRow = content.addStack()
+  mainRow.layoutHorizontally()
+  mainRow.centerAlignContent()
+
+  if (nxPeriod !== null) {
+    const pill = mainRow.addStack()
+    pill.backgroundColor = C.periodBg
+    pill.cornerRadius    = 5
+    pill.setPadding(2, 7, 2, 7)
+    const pt = pill.addText(String(nxPeriod))
+    pt.font      = Font.boldSystemFont(12)
+    pt.textColor = C.periodText
+    mainRow.addSpacer(8)
+  }
+
+  const next = mainRow.addText("Next: " + nxSubject)
+  next.font      = Font.boldSystemFont(13)
+  next.textColor = C.primary
+
+  if (nxTeacher) {
+    mainRow.addSpacer(6)
+    const tc = mainRow.addText(nxTeacher)
+    tc.font      = Font.systemFont(10)
+    tc.textColor = C.teacherAbbr
+  }
+
+  mainRow.addSpacer()
+  const timeRange = mainRow.addText(`${fmtTime(gap.next.start)}–${fmtTime(gap.next.end)}`)
+  timeRange.font      = Font.systemFont(10)
+  timeRange.textColor = C.secondary
+
+  const isHiddenLoc = isHiddenLocation(gap.next.location)
+  if (!isHiddenLoc) {
+    content.addSpacer(3)
+    const loc = content.addText(gap.next.location)
+    loc.font      = Font.systemFont(9)
+    loc.textColor = C.secondary
+  }
 }
 
 // ── Two-column lesson grid.
@@ -697,7 +882,7 @@ function renderTussenuurRow(w, placeholder) {
 function renderLessonGrid(w, events, sectionHeader) {
   const shown         = Math.min(events.length, SETTINGS.maxLaterLessons)
   const lessonsToShow = events.slice(0, shown)
-  const items         = insertTussenuurPlaceholders(lessonsToShow)
+  const items         = insertGapPlaceholders(lessonsToShow)
 
   const hdr = w.addText(sectionHeader)
   hdr.font      = Font.boldSystemFont(8)
@@ -713,6 +898,15 @@ function renderLessonGrid(w, events, sectionHeader) {
     // Tussenuur — always full width
     if (a.isTussenuur) {
       renderTussenuurRow(w, a)
+      w.addSpacer(4)
+      i++
+      rowCount++
+      continue
+    }
+
+    // Break placeholder — always full width
+    if (a.isBreakPlaceholder) {
+      renderBreakPlaceholderRow(w, a)
       w.addSpacer(4)
       i++
       rowCount++
@@ -767,8 +961,8 @@ function renderLessonGrid(w, events, sectionHeader) {
     more.textColor = C.secondary
   }
 
-  const tussenuurCount = items.filter(x => x.isTussenuur).length
-  return 1 + Math.ceil(shown / 2) + tussenuurCount
+  const placeholderCount = items.filter(x => x.isTussenuur || x.isBreakPlaceholder).length
+  return 1 + Math.ceil(shown / 2) + placeholderCount
 }
 
 function renderDeadlines(w, deadlines, reminders, maxItems) {
@@ -901,12 +1095,12 @@ async function buildWidget() {
   } catch {}
 
   const syncDot = header.addText("● ")
-  syncDot.font      = Font.systemFont(7)
+  syncDot.font      = Font.systemFont(8)
   syncDot.textColor = fromCache ? C.warning : C.breakAccent
   if (syncLabel) {
     const syncTxt = header.addText(syncLabel)
-    syncTxt.font      = Font.systemFont(9)
-    syncTxt.textColor = new Color("#152535")
+    syncTxt.font      = Font.boldSystemFont(11)
+    syncTxt.textColor = fromCache ? C.warning : C.primary
   }
 
   w.addSpacer(10)
@@ -943,18 +1137,29 @@ async function buildWidget() {
   if (current) {
     const mins     = Math.round((current.end - now) / 60000)
     const progress = (now - current.start) / (current.end - current.start)
-    renderLessonCard(w, current, "NOW", C.accent, C.card, `${mins} min remaining`, progress)
+    renderLessonCard(w, current, "NOW", C.accent, C.card, null, progress)
     slotsUsed += cardSlots(current)
 
     const afterCurrent = todayAll.filter(e => e.start >= current.end)
     if (afterCurrent.length > 0) {
-      const gapMin = Math.round((afterCurrent[0].start - current.end) / 60000)
-      if (gapMin >= SETTINGS.breakThresholdMin) {
-        w.addSpacer(5)
-        const breakNote = w.addText(`Break after this: ${gapMin} min`)
-        breakNote.font      = Font.systemFont(10)
-        breakNote.textColor = C.breakAccent
-        slotsUsed += 1
+      const nextEv = afterCurrent[0]
+      const gapMin = Math.round((nextEv.start - current.end) / 60000)
+      if (gapMin > 0) {
+        const segs         = getGapSegments(current.end, nextEv.start)
+        const hasBreak     = segs.some(s => s.type === 'break')
+        const hasTussenuur = segs.some(s => s.type === 'tussenuur')
+        let note  = null
+        let color = C.breakAccent
+        if (hasBreak && hasTussenuur) { note = `Pauze + tussenuur after this`; color = C.nextAccent }
+        else if (hasTussenuur)        { note = `Tussenuur after this: ${gapMin} min`; color = C.nextAccent }
+        else if (hasBreak)            { note = `Pauze after this: ${gapMin} min` }
+        if (note) {
+          w.addSpacer(5)
+          const breakNote = w.addText(note)
+          breakNote.font      = Font.systemFont(10)
+          breakNote.textColor = color
+          slotsUsed += 1
+        }
       }
     }
 
@@ -964,17 +1169,21 @@ async function buildWidget() {
       slotsUsed += renderLessonGrid(w, laterToday, "LATER TODAY")
     }
 
-  // CASE 2: In a break or before first lesson
+  // CASE 2: In a gap (break or tussenuur) or before first lesson
   } else if (!current && !todayDone && !noLessons) {
-    const brk = detectBreak(todayAll, now)
+    const gap = detectCurrentGap(todayAll, now)
 
-    if (brk) {
-      renderBreakCard(w, brk)
-      slotsUsed += cardSlots(brk.next)
-      const afterBreak = todayAll.filter(e => e.start > brk.next.start)
-      if (afterBreak.length > 0) {
+    if (gap) {
+      if (gap.type === 'tussenuur') {
+        renderTussenuurCard(w, gap)
+      } else {
+        renderBreakCard(w, gap)
+      }
+      slotsUsed += cardSlots(gap.next)
+      const afterGap = todayAll.filter(e => e.start > gap.next.start)
+      if (afterGap.length > 0) {
         w.addSpacer(8)
-        slotsUsed += renderLessonGrid(w, afterBreak, "LATER TODAY")
+        slotsUsed += renderLessonGrid(w, afterGap, "LATER TODAY")
       }
     } else {
       const next = todayAll.find(e => e.start > now)
