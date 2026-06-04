@@ -15,7 +15,7 @@ const CACHE_FOLDER = "Cache"
 const CACHE_FILE   = "school_ical.json"
 
 const SETTINGS = {
-  refreshMinutes:    10,
+  refreshFallbackMinutes: 30,
   maxLaterLessons:   6,   // increased — two-column grid fits more
   maxDeadlines:      5,   // increased — compact rows
   pastDays:          30,
@@ -356,6 +356,16 @@ function strikeThrough(str) {
 // Slim card design — uniform 3 slots regardless of content.
 function cardSlots(event) {
   return 3
+}
+
+// Returns sorted future transition times for today's events: start, midpoint, end per lesson.
+function computeTransitions(todayEvents, now) {
+  const times = []
+  for (const ev of todayEvents) {
+    const mid = new Date((ev.start.getTime() + ev.end.getTime()) / 2)
+    times.push(ev.start, mid, ev.end)
+  }
+  return times.filter(t => t > now).sort((a, b) => a - b)
 }
 
 // ─────────────────────────────────────────
@@ -834,7 +844,7 @@ function renderDeadlines(w, deadlines, reminders, maxItems) {
 async function buildWidget() {
   const w = new ListWidget()
   w.setPadding(14, 14, 14, 14)
-  w.refreshAfterDate = new Date(Date.now() + SETTINGS.refreshMinutes * 60 * 1000)
+  w.refreshAfterDate = new Date(Date.now() + SETTINGS.refreshFallbackMinutes * 60 * 1000)
   w.url = TAP_URL
 
   // Background gradient — deep ocean: near-black at top, slightly lighter at bottom
@@ -921,6 +931,13 @@ async function buildWidget() {
   const current   = todayAll.find(e => now >= e.start && now < e.end)
   const todayDone = todayAll.length > 0 && todayAll.every(e => e.end <= now)
   const noLessons = todayAll.length === 0
+
+  // Override refresh: next lesson-transition boundary, capped at fallback interval.
+  const transitions = computeTransitions(todayAll, now)
+  const maxRefresh  = new Date(now.getTime() + SETTINGS.refreshFallbackMinutes * 60 * 1000)
+  if (transitions.length > 0 && transitions[0] < maxRefresh) {
+    w.refreshAfterDate = transitions[0]
+  }
 
   // CASE 1: Currently in a lesson
   if (current) {
