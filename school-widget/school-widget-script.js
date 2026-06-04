@@ -915,7 +915,7 @@ function renderLessonGrid(w, events, sectionHeader) {
 
     // Peek at the next item — only pair if it's a real lesson (not tussenuur)
     const nextItem = i + 1 < items.length ? items[i + 1] : null
-    const b        = (nextItem && !nextItem.isTussenuur) ? nextItem : null
+    const b        = (nextItem && !nextItem.isTussenuur && !nextItem.isBreakPlaceholder) ? nextItem : null
 
     if (b) {
       // ── Two-column row
