@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Morning Summary — Preview</title>
+<style>
+  body { margin: 0; background: #0a0a0a; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; font-family: sans-serif; }
+  h1 { color: #555; font-size: 12px; letter-spacing: 2px; margin-bottom: 20px; text-transform: uppercase; }
+  canvas { box-shadow: 0 8px 40px rgba(0,0,0,0.8); }
+  #controls { margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  button { background: #1a1a1a; border: 1px solid #333; color: #aaa; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; letter-spacing: 1px; }
+  button:hover { background: #222; color: #E2B262; border-color: #E2B262; }
+</style>
+</head>
+<body>
+<h1>Morning Summary · Preview</h1>
+<canvas id="c"></canvas>
+<div id="controls">
+  <button onclick="toggleSection('weather')">Toggle Weather</button>
+  <button onclick="toggleSection('departure')">Toggle Departure</button>
+  <button onclick="toggleSection('reminders')">Toggle Reminders</button>
+  <button onclick="toggleSection('advice')">Toggle Advice</button>
+  <button onclick="download()">Save PNG</button>
+</div>
+
+<script>
+// ─── MOCK DATA ───────────────────────────────────────────
+// Edit this to preview different states
+const MOCK = {
+  city:    "Rotterdam",
+  timeStr: "07:14",
+  dateStr: "Wednesday, 4 June 2026",
+  battery: 84,
+  charging: false,
+
+  weather: {
+    ok: true,
+    temp: 17, feelsLike: 14, windSpeed: 31,
+    code: 3,
+    high: 19, low: 11,
+    uv: 4,
+    rainStr: "14:00–17:00",
+    sunriseStr: "05:21",
+    sunsetStr:  "22:03"
+  },
+
+  departure: {
+    ok: true,
+    eventTitle: "Wolfert",
+    travelMins: 23,
+    modeName: "public transport",
+    departureTime: (() => { const d = new Date(); d.setHours(8,12,0,0); return d })()
+  },
+
+  calendar: {
+    ok: true,
+    total: 5,
+    grouped: {
+      "Rooster": [
+        { title: "Wiskunde",       startDate: ts(8,30), endDate: ts(9,20),  isAllDay: false },
+        { title: "Nederlands",     startDate: ts(9,30), endDate: ts(10,20), isAllDay: false },
+        { title: "Engels",         startDate: ts(10,30),endDate: ts(11,20), isAllDay: false },
+      ],
+      "Personal": [
+        { title: "Gym",            startDate: ts(17,0), endDate: ts(18,30), isAllDay: false },
+      ],
+      "Barber Appointments": [
+        { title: "Rahim — cut",    startDate: ts(14,0), endDate: ts(14,45), isAllDay: false },
+        { title: "Daan — fade",    startDate: ts(15,0), endDate: ts(15,45), isAllDay: false },
+      ]
+    }
+  },
+
+  reminders: {
+    ok: true,
+    overdue:  [
+      { title: "Submit wiskunde huiswerk", priority: 1, dueDate: new Date(Date.now()-86400000) }
+    ],
+    dueToday: [
+      { title: "Reply to school email",    priority: 0, dueDate: new Date() },
+      { title: "Buy shampoo",              priority: 0, dueDate: new Date() }
+    ],
+    upcoming: [
+      { title: "Dentist appointment",      priority: 0, dueDate: new Date(Date.now()+172800000) },
+      { title: "Pay phone bill",           priority: 5, dueDate: new Date(Date.now()+259200000) }
+    ]
+  },
+
+  advice: [
+    "Leave by 08:12 for Wolfert — 23 min by public transport",
+    "Rain likely 14:00–17:00 — bring an umbrella",
+    "Windy (31 km/h) — bring a windproof jacket",
+    "Light day — good time to study or prep the shop"
+  ]
+}
+
+// which sections to show
+const SHOW = { weather: true, departure: true, reminders: true, advice: true }
+
+function ts(h, m) { const d = new Date(); d.setHours(h, m, 0, 0); return d }
+
+// ─── DESIGN TOKENS ───────────────────────────────────────
+const SCALE     = 1
+const TOP_INSET = 62
+const W         = 390
+const PAD       = 18
+const CORNER    = 12
+
+const C = {
+  bg:          "#15110C",
+  glowTop:     "#33220F",
+  cardWeather: "#171C22",
+  calCard:     "#231E10",
+  cardRemind:  "#151A15",
+  cardAdvice:  "#1C161A",
+  cardDepart:  "#1A161C",
+  accent:      "#E2B262",
+  accentDeep:  "#C9924A",
+  textMain:    "#F0E9DA",
+  textSub:     "#8A8070",
+  textTime:    "#B7AC92",
+  hair:        "#2E2619",
+}
+
+// Font sizes (pt — we render at 2x for sharpness in browser)
+const RETINA = 2   // canvas CSS px → physical px multiplier for sharpness
+const F = {
+  mast:     { size: 26, font: "HoeflerText, 'Hoefler Text', Georgia, serif",           weight: "900"    },
+  dateline: { size: 11.5,font:"HoeflerText, 'Hoefler Text', Georgia, serif",           style:  "italic" },
+  kicker:   { size: 9.5, font: "Menlo, 'Courier New', monospace",                      weight: "700"    },
+  secLbl:   { size: 9,   font: "Menlo, 'Courier New', monospace",                      weight: "700"    },
+  calGrp:   { size: 10.5,font: "Menlo, 'Courier New', monospace",                      weight: "700"    },
+  wMain:    { size: 14.5,font: "'AvenirNext', 'Avenir Next', 'Avenir', Helvetica, sans-serif", weight:"500" },
+  wSub:     { size: 11.5,font: "'AvenirNext', 'Avenir Next', 'Avenir', Helvetica, sans-serif", weight:"400" },
+  evtName:  { size: 13.5,font: "'AvenirNext', 'Avenir Next', 'Avenir', Helvetica, sans-serif", weight:"500" },
+  evtTime:  { size: 11.5,font: "Menlo, 'Courier New', monospace",                      weight: "400"    },
+  advTxt:   { size: 12.5,font: "'AvenirNext', 'Avenir Next', 'Avenir', Helvetica, sans-serif", weight:"400" },
+  remTxt:   { size: 12.5,font: "'AvenirNext', 'Avenir Next', 'Avenir', Helvetica, sans-serif", weight:"400" },
+  overflow: { size: 11,  font: "'AvenirNext', 'Avenir Next', 'Avenir', Helvetica, sans-serif", style: "italic" },
+  empty:    { size: 12.5,font: "'AvenirNext', 'Avenir Next', 'Avenir', Helvetica, sans-serif", style: "italic" }
+}
+
+const S = {
+  headerH: TOP_INSET + 100,
+  cp: 15, slH: 23, glH: 28, evH: 27, gg: 13,
+  adH: 22, rmH: 24, sg: 12, bp: 26
+}
+
+// ─── HELPERS ─────────────────────────────────────────────
+function trk(s) { return s.split("").join(" ") }
+function capStr(s, n) { return s.length > n ? s.slice(0, n-1) + "…" : s }
+function fmt(date) {
+  return String(date.getHours()).padStart(2,"0") + ":" + String(date.getMinutes()).padStart(2,"0")
+}
+function fmtShort(date) {
+  const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+  return `${days[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]}`
+}
+
+function lerp(a, b, t) { return a + (b-a)*t }
+function hexToRgb(h) {
+  const r = parseInt(h.slice(1,3),16)/255, g = parseInt(h.slice(3,5),16)/255, b2 = parseInt(h.slice(5,7),16)/255
+  return [r,g,b2]
+}
+function lerpHex(a, b, t) {
+  const [r1,g1,b1] = hexToRgb(a), [r2,g2,b2] = hexToRgb(b)
+  const ch = v => Math.round(lerp(v[0],v[1],t)*255).toString(16).padStart(2,"0")
+  return "#" + ch([r1,r2]) + ch([g1,g2]) + ch([b1,b2])
+}
+
+function setFont(ctx, f, sizeMult) {
+  const sz = f.size * RETINA * (sizeMult||1)
+  const style  = f.style  || "normal"
+  const weight = f.weight || "400"
+  ctx.font = `${style} ${weight} ${sz}px ${f.font}`
+}
+
+function dtxt(ctx, text, x, y, f, color) {
+  setFont(ctx, f)
+  ctx.fillStyle = color
+  ctx.textAlign = "left"
+  ctx.fillText(String(text), x*RETINA, y*RETINA + f.size*RETINA*0.85)
+}
+
+function dtxtR(ctx, text, x, y, w, h, f, color) {
+  setFont(ctx, f)
+  ctx.fillStyle = color
+  ctx.textAlign = "right"
+  ctx.fillText(String(text), (x+w)*RETINA, y*RETINA + f.size*RETINA*0.85)
+}
+
+function dtxtIn(ctx, text, x, y, w, h, f, color) {
+  setFont(ctx, f)
+  ctx.fillStyle = color
+  ctx.textAlign = "left"
+  // clip to width
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(x*RETINA, y*RETINA, w*RETINA, h*RETINA)
+  ctx.clip()
+  ctx.fillText(String(text), x*RETINA, y*RETINA + f.size*RETINA*0.85)
+  ctx.restore()
+}
+
+function fillR(ctx, x, y, w, h, color) {
+  ctx.fillStyle = color
+  ctx.fillRect(x*RETINA, y*RETINA, w*RETINA, h*RETINA)
+}
+
+function rrect(ctx, x, y, w, h, color) {
+  ctx.fillStyle = color
+  const r = CORNER*RETINA
+  const px = x*RETINA, py = y*RETINA, pw = w*RETINA, ph = h*RETINA
+  ctx.beginPath()
+  ctx.moveTo(px+r, py)
+  ctx.lineTo(px+pw-r, py)
+  ctx.quadraticCurveTo(px+pw, py, px+pw, py+r)
+  ctx.lineTo(px+pw, py+ph-r)
+  ctx.quadraticCurveTo(px+pw, py+ph, px+pw-r, py+ph)
+  ctx.lineTo(px+r, py+ph)
+  ctx.quadraticCurveTo(px, py+ph, px, py+ph-r)
+  ctx.lineTo(px, py+r)
+  ctx.quadraticCurveTo(px, py, px+r, py)
+  ctx.closePath()
+  ctx.fill()
+}
+
+function vGradient(ctx, x, y, w, h, topColor, botColor) {
+  const grd = ctx.createLinearGradient(x*RETINA, y*RETINA, x*RETINA, (y+h)*RETINA)
+  grd.addColorStop(0, topColor)
+  grd.addColorStop(1, botColor)
+  ctx.fillStyle = grd
+  ctx.fillRect(x*RETINA, y*RETINA, w*RETINA, h*RETINA)
+}
+
+function sunIcon(ctx, x, y, sz, color, isRise) {
+  ctx.strokeStyle = color
+  ctx.lineWidth = 0.75 * RETINA
+  const cx   = x + sz*0.5
+  const base = y + sz*0.68
+  const r    = sz*0.25
+  const gap  = sz*0.10
+  const rLen = sz*0.20
+  // horizon
+  ctx.beginPath()
+  ctx.moveTo(x*RETINA, base*RETINA)
+  ctx.lineTo((x+sz)*RETINA, base*RETINA)
+  ctx.stroke()
+  // semicircle
+  ctx.beginPath()
+  for (let i = 0; i <= 12; i++) {
+    const a  = Math.PI*i/12
+    const px = isRise ? cx - r*Math.cos(a) : cx + r*Math.cos(a)
+    const py = isRise ? base - r*Math.sin(a) : base + r*Math.sin(a)
+    i===0 ? ctx.moveTo(px*RETINA, py*RETINA) : ctx.lineTo(px*RETINA, py*RETINA)
+  }
+  ctx.stroke()
+  // rays
+  const angles = isRise
+    ? [Math.PI*0.75, Math.PI*0.5, Math.PI*0.25]
+    : [Math.PI*1.25, Math.PI*1.5, Math.PI*1.75]
+  for (const a of angles) {
+    const sx = cx + (r+gap)*Math.cos(a)
+    const sy = base - (r+gap)*Math.sin(a)
+    const ex = cx + (r+gap+rLen)*Math.cos(a)
+    const ey = base - (r+gap+rLen)*Math.sin(a)
+    ctx.beginPath()
+    ctx.moveTo(sx*RETINA, sy*RETINA)
+    ctx.lineTo(ex*RETINA, ey*RETINA)
+    ctx.stroke()
+  }
+}
+
+function weatherLabel(code) {
+  if (code===0)  return { text:"Clear sky",        sunny:true  }
+  if (code<=2)   return { text:"Mainly clear",     sunny:true  }
+  if (code===3)  return { text:"Overcast",         sunny:false }
+  if (code<=48)  return { text:"Foggy",            sunny:false }
+  if (code<=55)  return { text:"Drizzle",          sunny:false }
+  if (code<=65)  return { text:"Rain",             sunny:false }
+  if (code<=75)  return { text:"Snow",             sunny:false }
+  if (code<=82)  return { text:"Rain showers",     sunny:false }
+  return                { text:"Thunderstorm",     sunny:false }
+}
+
+// ─── CALENDAR HELPERS ────────────────────────────────────
+const CFG_CALENDARS = ["Events","Family","Rooster","School","Personal","Barber Appointments","Admin","Other"]
+
+function groupRoosterSessions(lessons) {
+  const sorted = lessons.slice().sort((a,b) => a.startDate - b.startDate)
+  const sessions = []
+  let start = null, end = null
+  for (const l of sorted) {
+    if (start===null || l.startDate - end > 3*3600000) {
+      if (start!==null) sessions.push({ title:"School", startDate:start, endDate:end, isAllDay:false })
+      start = l.startDate; end = l.endDate
+    } else {
+      if (l.endDate > end) end = l.endDate
+    }
+  }
+  if (start!==null) sessions.push({ title:"School", startDate:start, endDate:end, isAllDay:false })
+  return sessions
+}
+
+function sortedCals(calendar) {
+  return CFG_CALENDARS
+    .filter(n => calendar.grouped[n]?.length)
+    .sort((a,b) => calendar.grouped[a][0].startDate - calendar.grouped[b][0].startDate)
+    .map(n => n==="Rooster"
+      ? { name:"Rooster", events: groupRoosterSessions(calendar.grouped[n]) }
+      : { name:n, events: calendar.grouped[n] })
+}
+
+// ─── HEIGHT CALCULATORS ──────────────────────────────────
+function calHeight(calendar) {
+  if (!calendar.ok) return S.cp + S.slH + 22 + S.cp
+  const sorted = sortedCals(calendar)
+  const perCal = sorted.length===1 ? 7 : 4
+  let h = S.cp + S.slH
+  for (let i=0; i<sorted.length; i++) {
+    const evCount = Math.min(sorted[i].events.length, perCal)
+    const hasOverflow = sorted[i].events.length > perCal
+    h += S.glH + 1 + evCount*S.evH
+    if (hasOverflow) h += S.evH
+    if (i < sorted.length-1) h += S.gg
+  }
+  return h + S.cp
+}
+
+function remHeight(reminders) {
+  const SL=20, CAP=5
+  const buckets = [reminders.overdue, reminders.dueToday, reminders.upcoming].filter(b=>b.length>0)
+  const multi = buckets.length>1
+  let h = S.cp + S.slH
+  for (const b of buckets) {
+    if (multi) h += SL
+    h += Math.min(b.length,CAP)*S.rmH
+    if (b.length>CAP) h += S.rmH
+  }
+  return h + S.cp
+}
+
+// ─── SECTION RENDERERS ───────────────────────────────────
+function renderHeader(ctx, y, data) {
+  vGradient(ctx, 0, y, W, S.headerH, C.glowTop, C.bg)
+  const ty = y + TOP_INSET
+  const battStr = data.charging ? `${data.battery}%↑` : `${data.battery}%`
+  const kick = data.city
+    ? `${trk(data.city.toUpperCase())}   ·   ${data.timeStr}   ·   ${battStr}`
+    : `${data.timeStr}   ·   ${battStr}`
+  dtxt(ctx, kick, PAD, ty+8, F.kicker, C.accentDeep)
+  dtxt(ctx, "Morning Summary", PAD, ty+24, F.mast, C.textMain)
+  dtxt(ctx, data.dateStr, PAD, ty+58, F.dateline, C.textSub)
+  fillR(ctx, PAD, ty+74, 54, 2, C.accent)
+  return y + S.headerH
+}
+
+function renderWeather(ctx, y, weather) {
+  const cardH = S.cp + S.slH + 19 + 17 + 17 + S.cp
+  rrect(ctx, PAD, y, W-PAD*2, cardH, C.cardWeather)
+  const cx = PAD+S.cp
+  let cy = y+S.cp
+  dtxt(ctx, trk("WEATHER"), cx, cy, F.secLbl, C.accent)
+  cy += S.slH
+  const wd = weatherLabel(weather.code)
+  dtxt(ctx, `${wd.text}   ·   ${weather.temp}°   ·   feels ${weather.feelsLike}°`, cx, cy, F.wMain, C.textMain)
+  cy += 19
+  dtxt(ctx, `High ${weather.high}°    Low ${weather.low}°    Wind ${weather.windSpeed} km/h`, cx, cy, F.wSub, C.textSub)
+  cy += 17
+  const iSz=12, tGap=4, grpW=56
+  if (weather.sunriseStr) {
+    sunIcon(ctx, cx, cy, iSz, C.textSub, true)
+    dtxt(ctx, weather.sunriseStr, cx+iSz+tGap, cy+1, F.wSub, C.textSub)
+  }
+  if (weather.sunsetStr) {
+    const offX = weather.sunriseStr ? cx+grpW : cx
+    sunIcon(ctx, offX, cy, iSz, C.textSub, false)
+    dtxt(ctx, weather.sunsetStr, offX+iSz+tGap, cy+1, F.wSub, C.textSub)
+  }
+  return y + cardH
+}
+
+function renderDeparture(ctx, y, dep) {
+  const cardH = S.cp + S.slH + 19 + 17 + S.cp
+  const innerW = W-PAD*2-S.cp*2
+  rrect(ctx, PAD, y, W-PAD*2, cardH, C.cardDepart)
+  const cx = PAD+S.cp
+  let cy = y+S.cp
+  dtxt(ctx, trk("DEPARTURE"), cx, cy, F.secLbl, C.accent)
+  cy += S.slH
+  dtxtIn(ctx, `Leave by ${fmt(dep.departureTime)} for ${dep.eventTitle}`, cx, cy, innerW, 19, F.wMain, C.textMain)
+  cy += 19
+  dtxt(ctx, `${dep.travelMins} min by ${dep.modeName}`, cx, cy, F.wSub, C.textSub)
+  return y + cardH
+}
+
+function renderCalendar(ctx, y, calendar) {
+  const cardH  = calHeight(calendar)
+  const innerW = W-PAD*2-S.cp*2
+  rrect(ctx, PAD, y, W-PAD*2, cardH, C.calCard)
+  const cx = PAD+S.cp
+  let cy = y+S.cp
+  const lbl = calendar.ok
+    ? `${trk("CALENDAR")}    ${calendar.total} EVENT${calendar.total!==1?"S":""}`
+    : trk("CALENDAR")
+  dtxt(ctx, lbl, cx, cy, F.secLbl, C.accent)
+  fillR(ctx, cx, cy+14, 26, 1.5, C.accentDeep)
+  cy += S.slH
+  if (!calendar.ok) {
+    dtxt(ctx, "No events today", cx, cy, F.empty, C.textSub)
+  } else {
+    const sorted = sortedCals(calendar)
+    const perCal = sorted.length===1 ? 7 : 4
+    for (let i=0; i<sorted.length; i++) {
+      const { name, events } = sorted[i]
+      fillR(ctx, cx, cy+5, 3, 14, C.accent)
+      dtxt(ctx, name.toUpperCase(), cx+10, cy+6, F.calGrp, C.accent)
+      cy += S.glH
+      fillR(ctx, cx, cy, innerW, 1, C.hair)
+      cy += 1
+      const visible = events.slice(0, perCal)
+      for (const e of visible) {
+        const nameW = innerW-72
+        dtxtIn(ctx, capStr(e.title,28), cx+4, cy+6, nameW, S.evH-4, F.evtName, C.textMain)
+        const timeStr = e.isAllDay ? "all day" : `${fmt(e.startDate)} - ${fmt(e.endDate)}`
+        dtxtR(ctx, timeStr, PAD+S.cp, cy+7, innerW, S.evH-4, F.evtTime, C.textTime)
+        cy += S.evH
+      }
+      if (events.length > perCal) {
+        dtxt(ctx, `+ ${events.length-perCal} more`, cx+4, cy+6, F.overflow, C.textSub)
+        cy += S.evH
+      }
+      if (i < sorted.length-1) cy += S.gg
+    }
+  }
+  return y + cardH
+}
+
+function renderReminders(ctx, y, reminders) {
+  const cardH  = remHeight(reminders)
+  const innerW = W-PAD*2-S.cp*2
+  rrect(ctx, PAD, y, W-PAD*2, cardH, C.cardRemind)
+  const cx = PAD+S.cp
+  let cy = y+S.cp
+  dtxt(ctx, trk("REMINDERS"), cx, cy, F.secLbl, C.accent)
+  cy += S.slH
+  const SL=20, CAP=5
+  const buckets = [
+    { items: reminders.overdue,  label:"OVERDUE",  dot:C.accentDeep, col:C.textMain },
+    { items: reminders.dueToday, label:"TODAY",    dot:C.accent,     col:C.textMain },
+    { items: reminders.upcoming, label:"UPCOMING", dot:C.textSub,    col:C.textSub  }
+  ].filter(b => b.items.length>0)
+  const multi = buckets.length>1
+  for (const bucket of buckets) {
+    if (multi) { dtxt(ctx, bucket.label, cx, cy, F.calGrp, bucket.dot); cy += SL }
+    const visible = bucket.items.slice(0,CAP)
+    for (const r of visible) {
+      const prio = r.priority
+      const hasPrio = prio>0
+      const marks = prio===1?"!!!":prio===5?"!!":prio===9?"!":""
+      const prioCol = prio===1?C.accentDeep:prio===5?C.textTime:C.textSub
+      const marksOffset = prio===1?32:prio===5?26:prio===9?20:14
+      fillR(ctx, cx+2, cy+8, 4, 4, bucket.dot)
+      if (hasPrio) dtxt(ctx, marks, cx+12, cy+4, F.remTxt, prioCol)
+      const titleX = cx+marksOffset
+      const baseW  = innerW-marksOffset
+      if (bucket.label==="UPCOMING") {
+        const dueLbl = fmtShort(r.dueDate)
+        dtxtIn(ctx, capStr(r.title,32), titleX, cy+4, baseW-46, S.rmH-4, F.remTxt, bucket.col)
+        dtxtR(ctx, dueLbl, PAD+S.cp, cy+5, innerW, S.rmH-4, F.evtTime, C.textSub)
+      } else {
+        dtxtIn(ctx, capStr(r.title,38), titleX, cy+4, baseW, S.rmH-4, F.remTxt, bucket.col)
+      }
+      cy += S.rmH
+    }
+    if (bucket.items.length>CAP) {
+      dtxt(ctx, `+ ${bucket.items.length-CAP} more`, cx+14, cy+4, F.overflow, C.textSub)
+      cy += S.rmH
+    }
+  }
+  return y + cardH
+}
+
+function renderAdvice(ctx, y, advice) {
+  const cardH  = S.cp + S.slH + advice.length*S.adH + S.cp
+  const innerW = W-PAD*2-S.cp*2
+  rrect(ctx, PAD, y, W-PAD*2, cardH, C.cardAdvice)
+  const cx = PAD+S.cp
+  let cy = y+S.cp
+  dtxt(ctx, trk("ADVICE"), cx, cy, F.secLbl, C.accent)
+  cy += S.slH
+  for (const a of advice) {
+    fillR(ctx, cx+2, cy+7, 4, 4, C.accent)
+    dtxtIn(ctx, a, cx+14, cy+3, innerW-14, S.adH-2, F.advTxt, C.textMain)
+    cy += S.adH
+  }
+  return y + cardH
+}
+
+// ─── LAYOUT + MEASURE ────────────────────────────────────
+function measureLayout(data) {
+  let y = 0
+  y += S.headerH + S.sg
+  if (data.weather.ok && SHOW.weather)    y += S.sg + S.cp + S.slH + 19 + 17 + 17 + S.cp
+  if (data.departure.ok && SHOW.departure) y += S.sg + S.cp + S.slH + 19 + 17 + S.cp
+  y += calHeight(data.calendar)
+  if (data.reminders.ok && SHOW.reminders) y += S.sg + remHeight(data.reminders)
+  if (data.advice.length && SHOW.advice)   y += S.sg + S.cp + S.slH + data.advice.length*S.adH + S.cp
+  return y + S.bp
+}
+
+function draw() {
+  const data = MOCK
+  const totalH = Math.max(measureLayout(data), 844)
+  const canvas = document.getElementById("c")
+  canvas.width  = W * RETINA
+  canvas.height = totalH * RETINA
+  canvas.style.width  = W + "px"
+  canvas.style.height = totalH + "px"
+
+  const ctx = canvas.getContext("2d")
+  ctx.fillStyle = C.bg
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  let y = 0
+  y = renderHeader(ctx, y, data);    y += S.sg
+  if (data.weather.ok && SHOW.weather)    { y = renderWeather(ctx, y, data.weather);      y += S.sg }
+  if (data.departure.ok && SHOW.departure){ y = renderDeparture(ctx, y, data.departure);  y += S.sg }
+  y = renderCalendar(ctx, y, data.calendar)
+  if (data.reminders.ok && SHOW.reminders){ y += S.sg; y = renderReminders(ctx, y, data.reminders) }
+  if (data.advice.length && SHOW.advice)  { y += S.sg; y = renderAdvice(ctx, y, data.advice) }
+}
+
+function toggleSection(name) {
+  SHOW[name] = !SHOW[name]
+  draw()
+}
+
+function download() {
+  const canvas = document.getElementById("c")
+  const a = document.createElement("a")
+  a.href = canvas.toDataURL("image/png")
+  a.download = "morning-summary-preview.png"
+  a.click()
+}
+
+draw()
+</script>
+</body>
+</html>
