@@ -17,7 +17,7 @@ const CACHE_FILE   = "school_ical.json"
 const SETTINGS = {
   refreshFallbackMinutes: 30,
   maxLaterLessons:   6,   // increased — two-column grid fits more
-  maxDeadlines:      5,   // increased — compact rows
+  maxDeadlines:      3,
   pastDays:          30,
   futureDays:        30,
   nextDayLookAhead:  30,
@@ -25,7 +25,7 @@ const SETTINGS = {
 
 // Widget slot budget.
 // Large widget ≈ 22 slots total with the new slimmer card sizes.
-const WIDGET_SLOTS      = 22
+const WIDGET_SLOTS      = 20
 const DEADLINE_OVERHEAD = 2
 const DEADLINE_SLOTS    = 1   // compact deadline rows cost 1 slot each
 
@@ -93,37 +93,68 @@ function expandSubject(summary) {
 }
 
 // ─────────────────────────────────────────
-//  THEME — Deep Ocean
-//  Near-black navy base. Cyan for NOW/active.
-//  Emerald for breaks. Indigo for next day.
-//  Rose for tests/urgent. Amber for warnings.
+//  THEMES — Deep Ocean (dark) · Morning Fog (light)
 // ─────────────────────────────────────────
 
-const C = {
-  bg:            new Color("#07101c"),   // Near-black, deep ocean
-  card:          new Color("#0c1a2e"),   // Featured card: dark navy
-  breakCard:     new Color("#081a0f"),   // Break: deep forest
-  nextDayCard:   new Color("#0f0b22"),   // Next day: deep indigo
-  accent:        new Color("#22d3ee"),   // NOW: bright cyan
-  breakAccent:   new Color("#4ade80"),   // Break: emerald
-  nextAccent:    new Color("#818cf8"),   // Next day: soft indigo
-  primary:       new Color("#dde8f8"),   // Primary text: cool off-white
-  secondary:     new Color("#253d58"),   // Secondary: muted steel-blue
-  teacherAbbr:   new Color("#1a3048"),   // Teacher abbr: deep muted blue
-  done:          new Color("#4ade80"),   // Done: emerald
-  urgent:        new Color("#f87171"),   // Tests/urgent: rose-red
-  warning:       new Color("#fb923c"),   // Warning: amber
-  error:         new Color("#f87171"),   // Error: rose-red
-  periodBg:      new Color("#0e2035"),   // Period pill bg: deeper navy
-  periodText:    new Color("#38bdf8"),   // Period pill text: sky blue
-  tussenuurCard: new Color("#0a1422"),   // Tussenuur: near-bg
-  tussenuurText: new Color("#162232"),   // Tussenuur text: very muted
-  testCard:      new Color("#1c0e18"),   // Test card: dark rose-plum
-  cancelledCard: new Color("#090e16"),   // Cancelled: near-bg
-  cancelledText: new Color("#162232"),   // Cancelled text: very muted
-  divider:       new Color("#0e2030"),   // Section divider line
-  colDivider:    new Color("#112030"),   // Column divider in grid
+const DARK_THEME = {
+  bg:            new Color("#07101c"),
+  bgGradientEnd: new Color("#091628"),
+  card:          new Color("#0c1a2e"),
+  deadlineCard:  new Color("#0e1f35"),
+  breakCard:     new Color("#081a0f"),
+  nextDayCard:   new Color("#0f0b22"),
+  accent:        new Color("#22d3ee"),
+  breakAccent:   new Color("#4ade80"),
+  nextAccent:    new Color("#818cf8"),
+  primary:       new Color("#dde8f8"),
+  secondary:     new Color("#253d58"),
+  teacherAbbr:   new Color("#1a3048"),
+  done:          new Color("#4ade80"),
+  urgent:        new Color("#f87171"),
+  warning:       new Color("#fb923c"),
+  error:         new Color("#f87171"),
+  periodBg:      new Color("#0e2035"),
+  periodText:    new Color("#38bdf8"),
+  tussenuurCard: new Color("#0a1422"),
+  tussenuurText: new Color("#162232"),
+  testCard:      new Color("#1c0e18"),
+  cancelledCard: new Color("#090e16"),
+  cancelledText: new Color("#162232"),
+  divider:       new Color("#0e2030"),
+  colDivider:    new Color("#112030"),
+  sectionLabel:  new Color("#3a5a7a"),
 }
+
+const LIGHT_THEME = {
+  bg:            new Color("#f0ede8"),
+  bgGradientEnd: new Color("#e8e4de"),
+  card:          new Color("#ffffff"),
+  deadlineCard:  new Color("#f7f5f2"),
+  breakCard:     new Color("#f0faf4"),
+  nextDayCard:   new Color("#f5f3ff"),
+  accent:        new Color("#0891b2"),
+  breakAccent:   new Color("#16a34a"),
+  nextAccent:    new Color("#6366f1"),
+  primary:       new Color("#1a2535"),
+  secondary:     new Color("#7a8fa8"),
+  teacherAbbr:   new Color("#9ca3af"),
+  done:          new Color("#16a34a"),
+  urgent:        new Color("#dc2626"),
+  warning:       new Color("#d97706"),
+  error:         new Color("#dc2626"),
+  periodBg:      new Color("#e0f2fe"),
+  periodText:    new Color("#0369a1"),
+  tussenuurCard: new Color("#f8fafc"),
+  tussenuurText: new Color("#cbd5e1"),
+  testCard:      new Color("#fff1f2"),
+  cancelledCard: new Color("#f8fafc"),
+  cancelledText: new Color("#d1d5db"),
+  divider:       new Color("#e5e7eb"),
+  colDivider:    new Color("#e5e7eb"),
+  sectionLabel:  new Color("#9aabbf"),
+}
+
+let C = DARK_THEME
 
 // ─────────────────────────────────────────
 //  CACHE
@@ -411,6 +442,13 @@ function renderMiniLessonCell(container, event) {
     pt.font      = Font.boldSystemFont(9)
     pt.textColor = C.periodText
     mainRow.addSpacer(5)
+  } else {
+    const p = mainRow.addStack()
+    p.backgroundColor = C.periodBg
+    p.cornerRadius    = 4
+    p.setPadding(1, 5, 1, 5)
+    p.size = new Size(19, 13)
+    mainRow.addSpacer(5)
   }
 
   // Subject
@@ -445,7 +483,7 @@ function renderMiniLessonCell(container, event) {
     const subRow = container.addStack()
     subRow.layoutHorizontally()
     subRow.centerAlignContent()
-    if (period !== null) subRow.addSpacer(24) // indent under pill
+    subRow.addSpacer(24) // indent under pill
     if (hasTeacher) {
       const tc = subRow.addText(teacher)
       tc.font      = Font.systemFont(9)
@@ -804,10 +842,12 @@ function renderLessonGrid(w, events, sectionHeader) {
   const lessonsToShow = events.slice(0, shown)
   const items         = insertGapPlaceholders(lessonsToShow)
 
-  const hdr = w.addText(sectionHeader)
-  hdr.font      = Font.boldSystemFont(8)
-  hdr.textColor = C.secondary
-  w.addSpacer(5)
+  if (sectionHeader) {
+    const hdr = w.addText(sectionHeader)
+    hdr.font      = Font.boldSystemFont(8)
+    hdr.textColor = C.secondary
+    w.addSpacer(5)
+  }
 
   let i        = 0
   let rowCount = 0
@@ -854,10 +894,17 @@ function renderLessonGrid(w, events, sectionHeader) {
 
       i += 2
     } else {
-      // ── Single lesson — full width row
-      const fullRow = w.addStack()
-      fullRow.layoutVertically()
-      renderMiniLessonCell(fullRow, a)
+      // ── Single lesson — aligned under right column
+      const rowStack = w.addStack()
+      rowStack.layoutHorizontally()
+      rowStack.topAlignContent()
+
+      const spacer = rowStack.addStack()
+      spacer.size = new Size(GRID_CELL_W + 13, 0)
+
+      const rightCell = rowStack.addStack()
+      rightCell.layoutVertically()
+      renderMiniLessonCell(rightCell, a)
 
       i++
     }
@@ -866,79 +913,115 @@ function renderLessonGrid(w, events, sectionHeader) {
     rowCount++
   }
 
-  if (events.length > SETTINGS.maxLaterLessons) {
-    const more = w.addText(`+${events.length - SETTINGS.maxLaterLessons} more`)
-    more.font      = Font.systemFont(9)
-    more.textColor = C.secondary
-  }
+  const lessonOverflow = events.length > SETTINGS.maxLaterLessons
+    ? events.length - SETTINGS.maxLaterLessons
+    : 0
 
   const tussenuurCount = items.filter(x => x.isTussenuur).length
-  return 1 + Math.ceil(shown / 2) + tussenuurCount
+  return [1 + Math.ceil(shown / 2) + tussenuurCount, lessonOverflow]
 }
 
-function renderDeadlines(w, deadlines, reminders, maxItems) {
-  const combined = [
+function renderDeadlines(w, deadlines, reminders, maxItems, lessonOverflow = 0) {
+  const all = [
     ...deadlines.map(e => ({
       name:    e.title,
       days:    daysUntil(e.startDate),
       rawDate: e.startDate,
-      icon:    "📅",
+      isReminder: false,
       url:     `calshow://${toCalShowTime(e.startDate)}`,
     })),
     ...reminders.map(r => ({
       name:    r.title,
       days:    r.dueDate ? daysUntil(r.dueDate) : null,
       rawDate: r.dueDate,
-      icon:    "☑",
+      isReminder: true,
       url:     "x-apple-reminder://",
     })),
-  ]
-    .sort((a, b) => (a.days ?? 999) - (b.days ?? 999))
-    .slice(0, maxItems)
+  ].sort((a, b) => (a.days ?? 999) - (b.days ?? 999))
 
-  if (!combined.length) return
+  if (!all.length) return
 
-  w.addSpacer(7)
-  const divider = w.addStack()
-  divider.backgroundColor = C.divider
-  divider.size = new Size(0, 1)
-  w.addSpacer(6)
+  const overflow = all.length - maxItems
+  const showMore = overflow > 0
+  const combined = showMore ? all.slice(0, maxItems - 1) : all.slice(0, maxItems)
 
-  const hdr = w.addText("DEADLINES & REMINDERS")
-  hdr.font      = Font.boldSystemFont(8)
-  hdr.textColor = C.secondary
+  w.addSpacer(4)
+
+  // Section header: "+X more" (left, lesson overflow) · flex · "DUE" · "X items" (right)
+  const hdrRow = w.addStack()
+  hdrRow.layoutHorizontally()
+  hdrRow.centerAlignContent()
+  const hdrTxt = hdrRow.addText("DUE")
+  hdrTxt.font      = Font.boldSystemFont(11)
+  hdrTxt.textColor = C.primary
+  hdrRow.addSpacer(8)
+  const hdrCount = hdrRow.addText(`${all.length} item${all.length === 1 ? "" : "s"}`)
+  hdrCount.font      = Font.systemFont(8)
+  hdrCount.textColor = C.sectionLabel
+  hdrRow.addSpacer()
+  if (lessonOverflow > 0) {
+    const moreTxt = hdrRow.addText(`+${lessonOverflow} more`)
+    moreTxt.font      = Font.systemFont(9)
+    moreTxt.textColor = C.secondary
+  }
   w.addSpacer(5)
 
   for (const item of combined) {
-    const row = w.addStack()
-    row.layoutHorizontally()
-    row.centerAlignContent()
-    row.setPadding(2, 0, 2, 0)
-    row.url = item.url
+    const { text: dueText, color: dueColor } = item.days !== null
+      ? deadlineDisplay(item.days, item.rawDate)
+      : { text: "No date", color: C.secondary }
 
-    const icon = row.addText(item.icon + " ")
-    icon.font      = Font.systemFont(12)
-    icon.textColor = C.secondary
+    // Card with left accent strip
+    const card = w.addStack()
+    card.backgroundColor = C.deadlineCard
+    card.cornerRadius    = 8
+    card.layoutHorizontally()
+    card.topAlignContent()
+    card.url = item.url
 
-    const name = row.addText(item.name)
-    name.font      = Font.systemFont(12)
-    name.textColor = C.primary
-    name.lineLimit = 1
+    // Left strip — colour signals urgency
+    const strip = card.addStack()
+    strip.backgroundColor = dueColor
+    strip.size = new Size(3, 0)
 
-    row.addSpacer()
+    card.addSpacer(9)
 
-    if (item.days !== null) {
-      const { text, color } = deadlineDisplay(item.days, item.rawDate)
-      const lbl = row.addText(text)
-      lbl.font      = Font.boldSystemFont(11)
-      lbl.textColor = color
-    } else {
-      const lbl = row.addText("No date")
-      lbl.font      = Font.systemFont(11)
-      lbl.textColor = C.secondary
-    }
+    const content = card.addStack()
+    content.layoutVertically()
+    content.setPadding(6, 0, 6, 9)
+
+    const mainRow = content.addStack()
+    mainRow.layoutHorizontally()
+    mainRow.centerAlignContent()
+
+    // Type dot: calendar vs reminder
+    const dotChar = item.isReminder ? "◻ " : "◆ "
+    const dotTxt = mainRow.addText(dotChar)
+    dotTxt.font      = Font.boldSystemFont(7)
+    dotTxt.textColor = dueColor
+
+    const nameTxt = mainRow.addText(item.name)
+    nameTxt.font      = Font.systemFont(11)
+    nameTxt.textColor = C.primary
+    nameTxt.lineLimit = 1
+
+    mainRow.addSpacer()
+
+    const dueLbl = mainRow.addText(dueText)
+    dueLbl.font      = Font.boldSystemFont(10)
+    dueLbl.textColor = dueColor
 
     w.addSpacer(3)
+  }
+
+  if (showMore) {
+    w.addSpacer(1)
+    const moreRow = w.addStack()
+    moreRow.layoutHorizontally()
+    moreRow.addSpacer()
+    const more = moreRow.addText(`+${overflow + 1} more`)
+    more.font      = Font.systemFont(10)
+    more.textColor = C.sectionLabel
   }
 }
 
@@ -947,14 +1030,16 @@ function renderDeadlines(w, deadlines, reminders, maxItems) {
 // ─────────────────────────────────────────
 
 async function buildWidget() {
+  const isDark = Device.isUsingDarkAppearance()
+  C = isDark ? DARK_THEME : LIGHT_THEME
+
   const w = new ListWidget()
-  w.setPadding(14, 14, 14, 14)
+  w.setPadding(10, 14, 10, 14)
   w.refreshAfterDate = new Date(Date.now() + SETTINGS.refreshFallbackMinutes * 60 * 1000)
   w.url = TAP_URL
 
-  // Background gradient — deep ocean: near-black at top, slightly lighter at bottom
   const grad = new LinearGradient()
-  grad.colors    = [new Color("#07101c"), new Color("#091628")]
+  grad.colors    = [C.bg, C.bgGradientEnd]
   grad.locations = [0.0, 1.0]
   w.backgroundGradient = grad
 
@@ -981,7 +1066,7 @@ async function buildWidget() {
   // ── Header (2 slots)
   let slotsUsed = 2
 
-  w.addSpacer(4)
+  w.addSpacer(2)
 
   // Header row: date (left) · sync indicator (right)
   const header = w.addStack()
@@ -991,7 +1076,7 @@ async function buildWidget() {
   const dateTxt = header.addText(
     now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
   )
-  dateTxt.font      = Font.boldSystemFont(18)
+  dateTxt.font      = Font.boldSystemFont(14)
   dateTxt.textColor = C.primary
 
   header.addSpacer()
@@ -1011,7 +1096,7 @@ async function buildWidget() {
   if (syncLabel) {
     const syncTxt = header.addText(syncLabel)
     syncTxt.font      = Font.boldSystemFont(11)
-    syncTxt.textColor = fromCache ? C.warning : C.primary
+    syncTxt.textColor = fromCache ? C.warning : new Color("#6b8aaa")
   }
 
   w.addSpacer(10)
@@ -1032,6 +1117,7 @@ async function buildWidget() {
   }
 
   // ── Schedule logic
+  let lastGridOverflow = 0
   const todayAll  = eventsOnDate(allEvents, now)
   const current   = todayAll.find(e => now >= e.start && now < e.end)
   const todayDone = todayAll.length > 0 && todayAll.every(e => e.end <= now)
@@ -1077,7 +1163,9 @@ async function buildWidget() {
     const laterToday = todayAll.filter(e => e.start > now)
     if (laterToday.length > 0) {
       w.addSpacer(8)
-      slotsUsed += renderLessonGrid(w, laterToday, "LATER TODAY")
+      const [gridSlots, gridOverflow] = renderLessonGrid(w, laterToday, "LATER TODAY")
+      slotsUsed += gridSlots
+      lastGridOverflow = gridOverflow
     }
 
   // CASE 2: In a gap (break or tussenuur) or before first lesson
@@ -1094,7 +1182,9 @@ async function buildWidget() {
       const afterGap = todayAll.filter(e => e.start > gap.next.start)
       if (afterGap.length > 0) {
         w.addSpacer(8)
-        slotsUsed += renderLessonGrid(w, afterGap, "LATER TODAY")
+        const [gridSlots, gridOverflow] = renderLessonGrid(w, afterGap, "LATER TODAY")
+        slotsUsed += gridSlots
+        lastGridOverflow = gridOverflow
       }
     } else {
       const next = todayAll.find(e => e.start > now)
@@ -1104,7 +1194,9 @@ async function buildWidget() {
       const rest = todayAll.filter(e => e.start > next.start)
       if (rest.length > 0) {
         w.addSpacer(8)
-        slotsUsed += renderLessonGrid(w, rest, "LATER TODAY")
+        const [gridSlots, gridOverflow] = renderLessonGrid(w, rest, "LATER TODAY")
+        slotsUsed += gridSlots
+        lastGridOverflow = gridOverflow
       }
     }
 
@@ -1118,7 +1210,7 @@ async function buildWidget() {
       lbl.textColor = C.nextAccent
     } else {
       const t = w.addText("✓ Done for today")
-      t.font      = Font.mediumSystemFont(13)
+      t.font      = Font.systemFont(9)
       t.textColor = C.done
     }
     slotsUsed += 1
@@ -1142,7 +1234,9 @@ async function buildWidget() {
       const restOfNextDay = nextDayEvts.slice(1)
       if (restOfNextDay.length > 0) {
         w.addSpacer(8)
-        slotsUsed += renderLessonGrid(w, restOfNextDay, `${label} — REST OF DAY`)
+        const [gridSlots, gridOverflow] = renderLessonGrid(w, restOfNextDay, "")
+        slotsUsed += gridSlots
+        lastGridOverflow = gridOverflow
       }
     } else {
       w.addSpacer(6)
@@ -1160,9 +1254,9 @@ async function buildWidget() {
     Math.max(1, Math.floor(remainingSlots / DEADLINE_SLOTS))
   )
 
-  renderDeadlines(w, deadlines, reminders, maxDeadlines)
+  renderDeadlines(w, deadlines, reminders, maxDeadlines, lastGridOverflow)
 
-  w.addSpacer()
+  w.addSpacer(4)
   return w
 }
 
