@@ -8,7 +8,7 @@ A single-file **Scriptable** script (`morning-summary-script.js`) that runs on i
 
 ## Deployment
 
-Editing the file on Mac (via VS Code or any editor) syncs to Scriptable when manually pasting to iCloud Drive. If the app shows a stale version, reopen Scriptable or pull to refresh. The script runs via a Shortcuts wake automation — not manually.
+**After making any code changes, always run the `/deploy-scriptable` skill to copy the updated script to the iCloud Documents/Scriptable directory.**
 
 ## Architecture
 
