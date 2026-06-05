@@ -25,9 +25,19 @@ const SETTINGS = {
 
 // Widget slot budget.
 // Large widget ≈ 22 slots total with the new slimmer card sizes.
-const WIDGET_SLOTS      = 20
+let WIDGET_SLOTS        = 20
 const DEADLINE_OVERHEAD = 2
 const DEADLINE_SLOTS    = 1   // compact deadline rows cost 1 slot each
+
+// ── Extra-large widget (iPad only)
+// config.widgetFamily === "extraLarge" when placed as an extra-large iPad widget.
+// Patching let-declared constants here before any render code runs.
+const IS_EXTRA_LARGE = config.widgetFamily === "extraLarge"
+if (IS_EXTRA_LARGE) {
+  SETTINGS.maxLaterLessons = 12  // two-column grid, up to ~6 rows
+  SETTINGS.maxDeadlines    = 6
+  WIDGET_SLOTS             = 42  // ~2× large slot budget
+}
 
 const SUBJECT_NAMES = {
   netl: "Nederlands",
@@ -418,8 +428,9 @@ function computeTransitions(todayEvents, now) {
 
 // Fixed width for the left cell in the two-column lesson grid.
 // Approximates half the large widget's content area (≈ 311px total - 13px dividers = 298, /2 ≈ 149).
-const GRID_CELL_W    = 142
-const CARD_CONTENT_W = 280
+// For extra-large, these are patched upward after IS_EXTRA_LARGE detection above.
+let GRID_CELL_W    = IS_EXTRA_LARGE ? 200 : 142
+let CARD_CONTENT_W = IS_EXTRA_LARGE ? 500 : 280
 
 // ── Mini lesson cell for the two-column grid.
 //    Row 1: [period pill] subject  teacher  [badge]  time
@@ -1026,6 +1037,49 @@ function renderDeadlines(w, deadlines, reminders, maxItems, lessonOverflow = 0) 
 }
 
 // ─────────────────────────────────────────
+//  TOMORROW SECTION (extra-large only)
+// ─────────────────────────────────────────
+
+// Renders a compact preview of tomorrow's lessons.
+// Only shown when nextDay is literally tomorrow — Case 3 (today done) already
+// shows the next school day as its primary content, so we skip it there.
+function renderTomorrowSection(w, allEvents, now) {
+  const nextDay = nextDayWithLessons(allEvents, now)
+  if (!nextDay) return 0
+
+  // Bail if next school day is not actually tomorrow (gap of 2+ days)
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  if (nextDay.toDateString() !== tomorrow.toDateString()) return 0
+
+  const evts = eventsOnDate(allEvents, nextDay)
+  if (!evts.length) return 0
+
+  let slots = 0
+  w.addSpacer(10)
+
+  // Section header
+  const hdr = w.addText("TOMORROW")
+  hdr.font      = Font.boldSystemFont(8)
+  hdr.textColor = C.sectionLabel
+  w.addSpacer(4)
+  slots += 1
+
+  // Featured first lesson using the "next day" accent colour
+  renderLessonCard(w, evts[0], "TOMORROW", C.nextAccent, C.nextDayCard, "")
+  slots += cardSlots(evts[0])
+
+  // Rest as a grid, capped at 4 to leave room for deadlines
+  const rest = evts.slice(1, 5)
+  if (rest.length > 0) {
+    w.addSpacer(6)
+    const [gridSlots] = renderLessonGrid(w, rest, "")
+    slots += gridSlots
+  }
+  return slots
+}
+
+// ─────────────────────────────────────────
 //  BUILD WIDGET
 // ─────────────────────────────────────────
 
@@ -1247,6 +1301,12 @@ async function buildWidget() {
     }
   }
 
+  // ── Tomorrow preview (extra-large + Cases 1/2/3 where today isn't done)
+  // Case 3 (today done/no lessons) already shows next school day as primary content.
+  if (IS_EXTRA_LARGE && !todayDone && !noLessons) {
+    slotsUsed += renderTomorrowSection(w, allEvents, now)
+  }
+
   // ── Compute how many deadline items actually fit, then render
   const remainingSlots = WIDGET_SLOTS - slotsUsed - DEADLINE_OVERHEAD
   const maxDeadlines   = Math.min(
@@ -1285,6 +1345,8 @@ await loadConfig()
 const widget = await buildWidget()
 if (config.runsInWidget) {
   Script.setWidget(widget)
+} else if (IS_EXTRA_LARGE) {
+  await widget.presentExtraLarge()
 } else {
   await widget.presentLarge()
 }
