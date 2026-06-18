@@ -16,11 +16,36 @@ const CFG = {
   token:         "",
   chatId:        "",
   calendars:     ["Events","Family","Rooster","School","Personal","Barber Appointments","Admin","Other"],
-  thresh:        { wind: 25, cold: 3, warm: 25, uv: 6 },
+  thresh:        { wind: 25, cold: 3, warm: 25, uv: 6, aqi: 60 },   // aqi: European AQI "poor" band
   homeKeyword:   "Straatweg",
   schoolAddress: "Wolfert Tweetalig, Rotterdam",
-  roosterBuffer: 15
+  roosterBuffer: 15,
+  roosterName:   "Rooster",   // iOS calendar holding the school timetable (for "first lesson")
+  // Countdown targets — nearest upcoming is surfaced as advice. Dates are ISO YYYY-MM-DD.
+  countdowns:    [{ name: "Toetsenweek", date: "2026-06-22" }],
+  // Quote of the day — rotates daily (indexed by day-of-year). Overridable via config.
+  quotes: [
+    "Discipline is choosing what you want most over what you want now.",
+    "A clean cut starts with a steady hand.",
+    "You don't rise to the level of your goals, you fall to the level of your systems.",
+    "Master your craft and the money follows.",
+    "The man who moves a mountain begins by carrying away small stones.",
+    "Show up before you feel ready.",
+    "Sharp tools, sharp mind."
+  ]
 }
+
+// Per-weekday sunrise-glow tint behind the masthead (Mon–Sun). Subtle hue shift so the
+// card reads differently at a glance without breaking the espresso palette.
+const WEEKDAY_GLOW = [
+  "#2A1E2E", // Sun — plum
+  "#33220F", // Mon — amber (default)
+  "#2A2410", // Tue — olive-gold
+  "#10241F", // Wed — teal
+  "#221A2E", // Thu — indigo
+  "#2E2410", // Fri — warm bronze
+  "#2E1A14"  // Sat — rust
+]
 
 async function loadConfig() {
   const fm = FileManager.iCloud()
@@ -34,9 +59,13 @@ async function loadConfig() {
   if (cfg.homeKeyword   !== undefined) CFG.homeKeyword   = cfg.homeKeyword
   if (cfg.schoolAddress !== undefined) CFG.schoolAddress = cfg.schoolAddress
   if (cfg.roosterBuffer !== undefined) CFG.roosterBuffer = cfg.roosterBuffer
+  if (cfg.roosterName   !== undefined) CFG.roosterName   = cfg.roosterName
   // calendars: display order matters (events are grouped + shown in this order).
   // Keep the "Rooster" entry if you want the school-timetable grouping/collapse.
   if (Array.isArray(cfg.calendars) && cfg.calendars.length) CFG.calendars = cfg.calendars
+  if (Array.isArray(cfg.countdowns)) CFG.countdowns = cfg.countdowns
+  if (Array.isArray(cfg.quotes) && cfg.quotes.length) CFG.quotes = cfg.quotes
+  if (cfg.thresh && typeof cfg.thresh === "object") Object.assign(CFG.thresh, cfg.thresh)
 }
 
 // ─── DESIGN ───────────────────────────────────────────
@@ -190,13 +219,21 @@ function dtxtIn(dc, text, x, y, w, h, font, color) {
   dc.drawTextInRect(String(text), new Rect(x, y, w, h))
 }
 
+function dtxtC(dc, text, x, y, w, h, font, color) {
+  dc.setFont(font)
+  dc.setTextColor(color)
+  dc.setTextAlignedCenter()
+  dc.drawTextInRect(String(text), new Rect(x, y, w, h))
+}
+
 // ─── SECTION RENDERERS ────────────────────────────────
 // dc = null → measure only, dc = DrawContext → draw
 
 function renderHeader(dc, y, data) {
   if (dc) {
-    // gradient bleeds behind Dynamic Island — intentional
-    vGradient(dc, 0, y, W, S.headerH, C.glowTop, C.bg)
+    // gradient bleeds behind Dynamic Island — intentional.
+    // Top glow is tinted per weekday (data.glowTop) so the card reads differently each day.
+    vGradient(dc, 0, y, W, S.headerH, data.glowTop || C.glowTop, C.bg)
 
     // all text starts below Dynamic Island safe area
     const ty = y + TOP_INSET
@@ -401,6 +438,16 @@ function renderAdvice(dc, y, advice) {
   return y + cardH
 }
 
+// Subtle daily quote footer — centred italic line with a hairline above.
+function renderQuote(dc, y, quote) {
+  const h = sc(14) + sc(30)
+  if (dc) {
+    fillR(dc, W / 2 - sc(12), y + sc(6), sc(24), sc(1), C.hair)
+    dtxtC(dc, `“${quote}”`, PAD, y + sc(14), W - PAD * 2, sc(30), F.dateline, C.textSub)
+  }
+  return y + h
+}
+
 function renderDeparture(dc, y, dep) {
   const cardH  = S.cp + S.slH + sc(19) + sc(17) + S.cp
   const innerW = W - PAD * 2 - S.cp * 2
@@ -426,6 +473,7 @@ function runLayout(dc, data) {
   y = renderCalendar(dc, y, data.calendar)
   if (data.reminders.ok)   { y += S.sg; y = renderReminders(dc, y, data.reminders) }
   if (data.advice.length)  { y += S.sg; y = renderAdvice(dc, y, data.advice) }
+  if (data.quote)          { y += S.sg; y = renderQuote(dc, y, data.quote) }
   return y + S.bp
 }
 
@@ -466,14 +514,19 @@ function logicalEventCount(calendar) {
 // ─── DATA FETCHING ────────────────────────────────────
 async function getWeather(loc) {
   try {
-    const [geo, res] = await Promise.all([
+    const [geo, res, air] = await Promise.all([
       Location.reverseGeocode(loc.latitude, loc.longitude),
       new Request(
         `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}` +
         `&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m` +
         `&daily=temperature_2m_max,temperature_2m_min,uv_index_max,sunrise,sunset` +
         `&hourly=precipitation_probability&timezone=auto&wind_speed_unit=kmh`
-      ).loadJSON()
+      ).loadJSON(),
+      // Air quality — separate keyless Open-Meteo endpoint. Non-fatal: null on failure.
+      new Request(
+        `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${loc.latitude}&longitude=${loc.longitude}` +
+        `&current=european_aqi&timezone=auto`
+      ).loadJSON().catch(() => null)
     ])
 
     const place = geo[0]
@@ -506,8 +559,10 @@ async function getWeather(loc) {
     const sunriseStr = sunriseRaw ? sunriseRaw.slice(11, 16) : null
     const sunsetStr  = sunsetRaw  ? sunsetRaw.slice(11, 16)  : null
 
+    const aqi = air?.current?.european_aqi != null ? Math.round(air.current.european_aqi) : null
+
     return {
-      ok: true, city,
+      ok: true, city, aqi,
       temp:      Math.round(c.temperature_2m),
       feelsLike: Math.round(c.apparent_temperature),
       windSpeed: Math.round(c.wind_speed_10m),
@@ -691,12 +746,88 @@ async function getDeparture(calendar, loc) {
   } catch { return { ok: false } }
 }
 
+// ─── ENHANCEMENT HELPERS ──────────────────────────────
+// First actual lesson of today from the Rooster calendar (not the collapsed block).
+function firstLessonToday(calendar) {
+  const lessons = calendar.ok ? calendar.grouped?.[CFG.roosterName] : null
+  if (!lessons || !lessons.length) return null
+  const timed = lessons.filter(e => !e.isAllDay).sort((a, b) => a.startDate - b.startDate)
+  const first = timed[0] || lessons[0]
+  if (!first) return null
+  // Magister titles are often "subject period - teacher" — keep just the subject side.
+  const name = String(first.title || "").split(" - ")[0].trim()
+  const room = first.location && !first.location.includes(CFG.homeKeyword) ? first.location : null
+  return { name, start: first.startDate, room, allDay: !!first.isAllDay }
+}
+
+// Nearest upcoming countdown target (today or future). Past dates are ignored.
+function nearestCountdown() {
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0)
+  let best = null
+  for (const c of (CFG.countdowns || [])) {
+    if (!c || !c.date) continue
+    const d = new Date(`${c.date}T00:00:00`)
+    if (isNaN(d.getTime())) continue
+    const days = Math.round((d - today0) / 86400000)
+    if (days < 0) continue
+    if (!best || days < best.days) best = { name: c.name, days }
+  }
+  return best
+}
+
+// European AQI band label, or null when air is fine / no data.
+function aqiConcern(aqi) {
+  if (aqi == null) return null
+  if (aqi >= 80) return "very poor"
+  if (aqi >= CFG.thresh.aqi) return "poor"
+  return null
+}
+
+// Daily-rotating quote — indexed by day-of-year so it's stable across a day.
+function quoteOfTheDay() {
+  const q = CFG.quotes
+  if (!q || !q.length) return null
+  const now   = new Date()
+  const start = new Date(now.getFullYear(), 0, 0)
+  const doy   = Math.floor((now - start) / 86400000)
+  return q[doy % q.length]
+}
+
+// Consecutive-day gym streak from gym-log.json (written by the post-gym script).
+// Inactive (returns 0) until that log exists. Async — file IO.
+async function getGymStreak() {
+  try {
+    const fm   = FileManager.iCloud()
+    const path = fm.joinPath(fm.documentsDirectory(), "gym-log.json")
+    if (!fm.fileExists(path)) return 0
+    await fm.downloadFileFromiCloud(path)
+    const log = JSON.parse(fm.readString(path))
+    if (!Array.isArray(log) || !log.length) return 0
+    const dayKeys = new Set(log.map(e => String(e.date || "").slice(0, 10)).filter(Boolean))
+    const fmtKey  = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    const cursor  = new Date(); cursor.setHours(0, 0, 0, 0)
+    // Allow the streak to "hold" if today isn't logged yet but yesterday was.
+    if (!dayKeys.has(fmtKey(cursor))) cursor.setDate(cursor.getDate() - 1)
+    let streak = 0
+    while (dayKeys.has(fmtKey(cursor))) { streak++; cursor.setDate(cursor.getDate() - 1) }
+    return streak
+  } catch { return 0 }
+}
+
 // ─── ADVICE ───────────────────────────────────────────
-function buildAdvice(weather, calendar, departure) {
+function buildAdvice(weather, calendar, departure, gymStreak = 0) {
   const advice = [], now = new Date()
   if (departure && departure.ok) {
     advice.push(`Leave by ${fmt(departure.departureTime)} for ${departure.eventTitle} — ${departure.travelMins} min by ${departure.modeName}`)
   }
+
+  // First lesson of the day (school days only)
+  const first = firstLessonToday(calendar)
+  if (first && !first.allDay) {
+    const roomPart = first.room ? ` · ${first.room}` : ""
+    advice.push(`First lesson: ${first.name} · ${fmt(first.start)}${roomPart}`)
+  }
+
   if (calendar.ok) {
     const all = []
     for (const n of CFG.calendars) if (calendar.grouped[n]) all.push(...calendar.grouped[n])
@@ -727,11 +858,36 @@ function buildAdvice(weather, calendar, departure) {
     if (weather.high < CFG.thresh.cold)                advice.push(`Very cold (${weather.high}\u00B0C) \u2014 add gloves`)
     if (weather.high >= CFG.thresh.warm)               advice.push(`Warm day (${weather.high}\u00B0C) \u2014 light clothing`)
     if (wd.sunny || weather.uv >= CFG.thresh.uv)       advice.push(`Consider sunscreen`)
+
+    // Smart workout suggestion \u2014 reuses already-fetched weather
+    const wet   = !!weather.rainStr || weather.code >= 51
+    const windy = weather.windSpeed >= CFG.thresh.wind
+    const cold  = weather.high < CFG.thresh.cold
+    advice.push((wet || windy || cold)
+      ? "Poor running weather \u2014 train indoors or hit the gym"
+      : "Good conditions for an outdoor run")
+
+    // Air quality flag
+    const concern = aqiConcern(weather.aqi)
+    if (concern) advice.push(`Air quality ${concern} (AQI ${weather.aqi}) \u2014 limit hard outdoor exertion`)
   }
+
   if (calendar.ok) {
     const barberCount = calendar.grouped["Barber Appointments"]?.length ?? 0
     if (barberCount > 3) advice.push(`${barberCount} clients today \u2014 busy one at the shop`)
   }
+
+  // Countdown to the nearest key date
+  const cd = nearestCountdown()
+  if (cd) {
+    advice.push(cd.days === 0 ? `${cd.name} is today`
+              : cd.days === 1 ? `${cd.name} is tomorrow`
+              : `${cd.days} days until ${cd.name}`)
+  }
+
+  // Gym streak (inactive until gym-log.json exists)
+  if (gymStreak >= 2) advice.push(`Gym streak: ${gymStreak} days \u2014 keep it going`)
+
   return advice
 }
 
@@ -791,7 +947,8 @@ async function main() {
     getWeather(loc), getCalendar(), getReminders()
   ])
   const departure = await getDeparture(calendar, loc)
-  const advice = buildAdvice(weather, calendar, departure)
+  const gymStreak = await getGymStreak()
+  const advice = buildAdvice(weather, calendar, departure, gymStreak)
   const battery  = Math.round(Device.batteryLevel() * 100)
   const charging = Device.isCharging()
   const data = {
@@ -800,7 +957,9 @@ async function main() {
     dateStr: fmtDate(now),
     timeStr: fmt(now),
     battery,
-    charging
+    charging,
+    glowTop: new Color(WEEKDAY_GLOW[now.getDay()] || "#33220F"),
+    quote:   quoteOfTheDay()
   }
 
   // Pass 1 — measure

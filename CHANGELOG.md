@@ -7,7 +7,14 @@ All notable changes to this repo are documented here. Format loosely follows
 
 ### Added
 - morning-summary: configurable `calendars` list via config (#2).
+- morning-summary: first-lesson line, smart workout suggestion, key-date countdowns,
+  per-weekday masthead theming (#11); quote-of-the-day footer + gym-streak line (#12);
+  air-quality (AQI) flag via keyless Open-Meteo (#10).
 - Repo: root `CLAUDE.md` overview + per-module `CLAUDE.md` files; `CHANGELOG.md` (#21).
+
+### Deferred (need external credentials)
+- morning-summary: TrainMore gym capacity + barber-bookings endpoint (#10), NS disruption
+  alert (#12) — left out pending API keys/endpoints.
 
 ### Changed
 - Repo: standardised on a single root `Config/` directory for all module config templates;

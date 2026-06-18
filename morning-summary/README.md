@@ -62,7 +62,21 @@ The `CFG` object at the top of the script holds defaults; `loadConfig()` overrid
 | `homeKeyword` | `"Straatweg"` | Event locations containing this are treated as home (no departure alert) |
 | `schoolAddress` | `"Wolfert Tweetalig, Rotterdam"` | Destination used for `Rooster` departure timing |
 | `roosterBuffer` | `15` | Extra minutes added before the first school lesson |
+| `roosterName` | `"Rooster"` | iOS calendar holding the school timetable (used for the "first lesson" line) |
 | `calendars` | the list below | **Which calendars to read, in display order.** Add the key to your config JSON to override. |
+| `countdowns` | `[Toetsenweek]` | Key dates surfaced as "N days until X" (nearest upcoming). `[{ "name": "...", "date": "YYYY-MM-DD" }]` |
+| `quotes` | built-in list | Quote-of-the-day pool, rotates daily |
+| `thresh.aqi` | `60` | European AQI band (≥60 = poor) that triggers the air-quality flag |
+
+### Enhancements surfaced in the Advice section
+
+- **First lesson** of the day (subject · time · room) on school days, from the `roosterName` calendar.
+- **Smart workout suggestion** — indoor vs. outdoor run, from the already-fetched weather.
+- **Air quality** flag when the European AQI is poor (keyless Open-Meteo air-quality API).
+- **Countdown** to the nearest key date from `countdowns`.
+- **Gym streak** — consecutive-day count, active once `gym-log.json` exists (written by the post-gym script).
+- **Weekday theming** — the masthead glow is tinted per weekday.
+- **Quote of the day** — a rotating line in the card footer.
 
 ```json
 "calendars": ["Events", "Family", "Rooster", "School", "Personal", "Barber Appointments", "Admin", "Other"]

@@ -5,6 +5,18 @@
   "homeKeyword": "Straatweg",
   "schoolAddress": "Wolfert Tweetalig, Rotterdam",
   "roosterBuffer": 15,
+  "roosterName": "Rooster",
   "_comment_calendars": "Calendars to read, in display order. Keep \"Rooster\" to get school-timetable grouping. Remove this key to use the built-in default list.",
-  "calendars": ["Events", "Family", "Rooster", "School", "Personal", "Barber Appointments", "Admin", "Other"]
+  "calendars": ["Events", "Family", "Rooster", "School", "Personal", "Barber Appointments", "Admin", "Other"],
+  "_comment_thresh": "Advice thresholds. aqi = European AQI band (>=60 poor) that triggers an air-quality flag.",
+  "thresh": { "wind": 25, "cold": 3, "warm": 25, "uv": 6, "aqi": 60 },
+  "_comment_countdowns": "Key dates surfaced as 'N days until X' (nearest upcoming shown). Dates are YYYY-MM-DD.",
+  "countdowns": [
+    { "name": "Toetsenweek", "date": "2026-06-22" }
+  ],
+  "_comment_quotes": "Quote-of-the-day pool; rotates daily. Remove to use the built-in defaults.",
+  "quotes": [
+    "Discipline is choosing what you want most over what you want now.",
+    "A clean cut starts with a steady hand."
+  ]
 }
