@@ -1,7 +1,10 @@
 {
+  "_comment": "Copy this file to morning-summary-config.json (same Config/ folder in Scriptable's iCloud Drive). token + chatId are required; the rest are optional overrides.",
   "token": "YOUR_TELEGRAM_BOT_TOKEN",
   "chatId": "YOUR_TELEGRAM_CHAT_ID",
   "homeKeyword": "Straatweg",
   "schoolAddress": "Wolfert Tweetalig, Rotterdam",
-  "roosterBuffer": 15
+  "roosterBuffer": 15,
+  "_comment_calendars": "Calendars to read, in display order. Keep \"Rooster\" to get school-timetable grouping. Remove this key to use the built-in default list.",
+  "calendars": ["Events", "Family", "Rooster", "School", "Personal", "Barber Appointments", "Admin", "Other"]
 }

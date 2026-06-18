@@ -34,6 +34,9 @@ async function loadConfig() {
   if (cfg.homeKeyword   !== undefined) CFG.homeKeyword   = cfg.homeKeyword
   if (cfg.schoolAddress !== undefined) CFG.schoolAddress = cfg.schoolAddress
   if (cfg.roosterBuffer !== undefined) CFG.roosterBuffer = cfg.roosterBuffer
+  // calendars: display order matters (events are grouped + shown in this order).
+  // Keep the "Rooster" entry if you want the school-timetable grouping/collapse.
+  if (Array.isArray(cfg.calendars) && cfg.calendars.length) CFG.calendars = cfg.calendars
 }
 
 // ─── DESIGN ───────────────────────────────────────────

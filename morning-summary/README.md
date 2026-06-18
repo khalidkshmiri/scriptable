@@ -39,6 +39,10 @@ In the Scriptable folder in iCloud Drive, create a subfolder called `Config` and
 }
 ```
 
+Optional keys: `homeKeyword`, `schoolAddress`, `roosterBuffer`, and `calendars` (see
+[Configuration](#configuration)). A full template with every key is in
+[`../Config/morning-summary-config.example.json`](../Config/morning-summary-config.example.json).
+
 ### 4. Add the script
 
 Paste `morning-summary-script.js` into Scriptable (tap `+` → paste).
@@ -49,18 +53,26 @@ In the Shortcuts app, create a Personal Automation triggered on **Alarm** → **
 
 ## Configuration
 
-At the top of the script, the `CFG` object controls which calendars are shown and the thresholds used to generate advice:
+The `CFG` object at the top of the script holds defaults; `loadConfig()` overrides them from
+`Config/morning-summary-config.json` at runtime. The configurable keys:
 
-```javascript
-const CFG = {
-  token:     "",   // loaded from Config/morning-summary-config.json
-  chatId:    "",
-  calendars: ["Events","Family","Rooster","School","Personal","Barber Appointments","Admin","Other"],
-  thresh:    { wind: 25, cold: 3, warm: 25, uv: 6 }
-}
+| Key | Default | What it does |
+|---|---|---|
+| `token`, `chatId` | *(required)* | Telegram bot token + chat ID |
+| `homeKeyword` | `"Straatweg"` | Event locations containing this are treated as home (no departure alert) |
+| `schoolAddress` | `"Wolfert Tweetalig, Rotterdam"` | Destination used for `Rooster` departure timing |
+| `roosterBuffer` | `15` | Extra minutes added before the first school lesson |
+| `calendars` | the list below | **Which calendars to read, in display order.** Add the key to your config JSON to override. |
+
+```json
+"calendars": ["Events", "Family", "Rooster", "School", "Personal", "Barber Appointments", "Admin", "Other"]
 ```
 
-Calendar display order follows the `CFG.calendars` array. The cap per calendar is adaptive: 7 events if only one calendar has events, 4 per calendar when two or more calendars have events.
+Calendar display order follows the `calendars` array. The cap per calendar is adaptive: 7 events
+if only one calendar has events, 4 per calendar when two or more do. Keep the `"Rooster"` entry to
+get the school-timetable grouping (many lessons collapse into one block, and count as one
+commitment for the heavy/light-day advice). The advice thresholds (`thresh`: wind/cold/warm/uv)
+stay inline in the script.
 
 ## Data sources
 
