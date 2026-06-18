@@ -10,6 +10,12 @@ All notable changes to this repo are documented here. Format loosely follows
 - morning-summary: first-lesson line, smart workout suggestion, key-date countdowns,
   per-weekday masthead theming (#11); quote-of-the-day footer + gym-streak line (#12);
   air-quality (AQI) flag via keyless Open-Meteo (#10).
+- school-lockscreen: new `accessoryCircular` next-lesson countdown ring (progress drains over
+  the active lesson), alongside the existing rectangular variant — selected by widget family (#13).
+- New `countdown-widget` module: lock-screen countdown to named dates, `accessoryInline` +
+  `accessoryRectangular`, configured via `Config/countdown-config.json` (#13).
+- New `next-event-widget` module: lock-screen next calendar event, `accessoryInline` +
+  `accessoryRectangular`, configured via `Config/next-event-config.json` (#13).
 - Repo: root `CLAUDE.md` overview + per-module `CLAUDE.md` files; `CHANGELOG.md` (#21).
 
 ### Deferred (need external credentials)

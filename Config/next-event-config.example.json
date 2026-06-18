@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy to next-event-config.json in Scriptable's Config/ folder. Shows the next timed event across these iOS calendars.",
+  "calendars": ["Personal", "Events", "Other", "School", "Barber Appointments"],
+  "horizonDays": 7
+}

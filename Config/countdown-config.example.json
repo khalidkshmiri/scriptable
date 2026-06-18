@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to countdown-config.json in Scriptable's Config/ folder. Nearest upcoming target is shown. Dates are YYYY-MM-DD.",
+  "targets": [
+    { "name": "Toetsenweek", "date": "2026-06-22" },
+    { "name": "GPO eindexamen", "date": "2026-06-29" }
+  ]
+}

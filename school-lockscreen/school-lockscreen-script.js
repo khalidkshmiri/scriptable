@@ -316,35 +316,13 @@ function addMessage(widget, text) {
 }
 
 // ─────────────────────────────────────────
-//  MAIN
+//  RECTANGULAR WIDGET (current + next lesson)
 // ─────────────────────────────────────────
 
-async function main() {
-  await loadConfig()
-
+function buildRectangular(schedule, now) {
+  const { current, next, nextFuture } = schedule
   const widget = new ListWidget()
   widget.backgroundColor = new Color("#000000", 0)  // transparent — iOS vibrant tint handles it
-
-  // Set refresh to next lesson boundary so the widget flips exactly on time
-  let icalResult
-  try {
-    icalResult = await fetchIcal(ICAL_URL)
-  } catch {
-    // If even the cache is unavailable, show an error and bail
-    addMessage(widget, "Geen data — controleer verbinding")
-    Script.setWidget(widget)
-    Script.complete()
-    return
-  }
-
-  const { events, fromCache } = icalResult
-  const now = new Date()
-  const { current, next, nextFuture, todayLessons } = getSchedule(events, now)
-
-  // Schedule next refresh at the next lesson start/end, capped at REFRESH_MINS
-  const fallback  = new Date(now.getTime() + REFRESH_MINS * 60 * 1000)
-  const boundary  = nextTransition(todayLessons, now)
-  widget.refreshAfterDate = (boundary && boundary < fallback) ? boundary : fallback
 
   if (!current && !next) {
     // No more lessons today
@@ -389,11 +367,135 @@ async function main() {
       addMessage(widget, "Geen lessen meer gepland")
     }
   }
+  return widget
+}
+
+// ─────────────────────────────────────────
+//  CIRCULAR WIDGET (next-lesson countdown ring)
+// ─────────────────────────────────────────
+
+// Draws a progress ring with a centred label. Lock-screen widgets are rendered
+// monochrome/tinted by iOS, so we draw in white and let the system tint it.
+function drawRing(progress, centerText, subText) {
+  const size = 200
+  const dc = new DrawContext()
+  dc.size = new Size(size, size)
+  dc.opaque = false
+  dc.respectScreenScale = true
+
+  const cx = size / 2, cy = size / 2, lw = 18, r = size / 2 - lw / 2 - 2
+  const p  = Math.max(0, Math.min(1, progress))
+
+  // Track
+  dc.setStrokeColor(new Color("#FFFFFF", 0.25))
+  dc.setLineWidth(lw)
+  const track = new Path()
+  track.addEllipse(new Rect(cx - r, cy - r, 2 * r, 2 * r))
+  dc.addPath(track); dc.strokePath()
+
+  // Progress arc (clockwise from 12 o'clock), approximated with segments
+  if (p > 0) {
+    dc.setStrokeColor(new Color("#FFFFFF", 0.95))
+    dc.setLineWidth(lw)
+    const arc   = new Path()
+    const start = -Math.PI / 2
+    const steps = Math.max(1, Math.round(60 * p))
+    for (let i = 0; i <= steps; i++) {
+      const a  = start + (i / 60) * 2 * Math.PI
+      const px = cx + r * Math.cos(a)
+      const py = cy + r * Math.sin(a)
+      i === 0 ? arc.move(new Point(px, py)) : arc.addLine(new Point(px, py))
+    }
+    dc.addPath(arc); dc.strokePath()
+  }
+
+  // Centre number
+  dc.setTextAlignedCenter()
+  dc.setTextColor(Color.white())
+  dc.setFont(Font.boldSystemFont(58))
+  dc.drawTextInRect(centerText, new Rect(0, cy - 46, size, 64))
+
+  // Small label below the number
+  if (subText) {
+    dc.setFont(Font.mediumSystemFont(24))
+    dc.setTextColor(new Color("#FFFFFF", 0.8))
+    dc.drawTextInRect(subText, new Rect(0, cy + 18, size, 30))
+  }
+  return dc.getImage()
+}
+
+function buildCircular(schedule, now) {
+  const { current, next, nextFuture } = schedule
+  const widget = new ListWidget()
+  widget.backgroundColor = new Color("#000000", 0)
+  widget.setPadding(0, 0, 0, 0)
+
+  let progress = 0, center = "—", sub = ""
+  if (current) {
+    // Drain from full (start) to empty (end)
+    const total = current.end - current.start
+    const done  = now - current.start
+    progress    = total > 0 ? 1 - done / total : 0
+    center      = String(Math.max(0, Math.round((current.end - now) / 60000)))
+    sub         = "min"
+  } else if (next) {
+    // Break — static, minutes until next lesson
+    center = String(Math.max(0, minsBetween(now, next.start)))
+    sub    = "vrij"
+  } else if (nextFuture) {
+    center = "—"
+    sub    = fmtDayDate(nextFuture.start)
+  }
+
+  const img = widget.addImage(drawRing(progress, center, sub))
+  img.centerAlignImage()
+  img.imageSize = new Size(58, 58)
+  return widget
+}
+
+// ─────────────────────────────────────────
+//  MAIN
+// ─────────────────────────────────────────
+
+async function main() {
+  await loadConfig()
+
+  const family = config.runsInWidget ? config.widgetFamily : null
+
+  let icalResult
+  try {
+    icalResult = await fetchIcal(ICAL_URL)
+  } catch {
+    const widget = new ListWidget()
+    widget.backgroundColor = new Color("#000000", 0)
+    addMessage(widget, "Geen data — controleer verbinding")
+    if (config.runsInWidget) Script.setWidget(widget)
+    else await widget.presentAccessoryRectangular()
+    Script.complete()
+    return
+  }
+
+  const { events } = icalResult
+  const now      = new Date()
+  const schedule = getSchedule(events, now)
+
+  const widget = family === "accessoryCircular"
+    ? buildCircular(schedule, now)
+    : buildRectangular(schedule, now)
+
+  // Refresh at the next lesson start/end boundary, capped at REFRESH_MINS
+  const fallback = new Date(now.getTime() + REFRESH_MINS * 60 * 1000)
+  const boundary = nextTransition(schedule.todayLessons, now)
+  widget.refreshAfterDate = (boundary && boundary < fallback) ? boundary : fallback
 
   if (config.runsInWidget) {
     Script.setWidget(widget)
+  } else if (family === "accessoryCircular") {
+    await widget.presentAccessoryCircular()
   } else {
-    await widget.presentAccessoryRectangular()
+    // When run in-app, preview both so either placement can be checked.
+    await buildRectangular(schedule, now).presentAccessoryRectangular()
+    await buildCircular(schedule, now).presentAccessoryCircular()
   }
   Script.complete()
 }
