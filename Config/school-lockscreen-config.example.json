@@ -1,0 +1,4 @@
+{
+  "_comment": "Copy this file to school-lockscreen-config.json and fill in your Magister iCal URL. Open Magister → Profiel → Agenda → iCal and copy your personal feed URL.",
+  "icalUrl": "YOUR_ICAL_FEED_URL"
+}

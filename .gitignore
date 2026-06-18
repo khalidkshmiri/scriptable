@@ -1,3 +1,15 @@
 .DS_Store
-Config/morning-summary-config.json
-Config/school-widget-config.json
+
+# Filled-in config files (live credentials / personal iCal URLs) — never commit.
+# Only the *.example.json templates are tracked.
+Config/*.json
+!Config/*.example.json
+
+# Per-module legacy config locations (kept ignored in case old copies linger)
+*/Config/*.json
+!*/Config/*.example.json
+
+# Runtime iCloud caches written on-device
+**/Cache/
+school-widget/school_ical.json
+*-log.json

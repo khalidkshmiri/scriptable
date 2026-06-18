@@ -1,3 +1,7 @@
 {
-  "icalUrl": "YOUR_MAGISTER_ICAL_URL"
+  "_comment": "Copy this file to school-widget-config.json (same Config/ folder in Scriptable's iCloud Drive) and fill in your values. Only icalUrl is required.",
+  "icalUrl": "YOUR_MAGISTER_ICAL_URL",
+  "calendarName": "School",
+  "remindersName": "School",
+  "tapUrl": "magister://"
 }
