@@ -1,0 +1,3 @@
+{
+  "_comment": "Optional. Weekly Review reuses Telegram token/chatId from morning-summary-config.json and subjects from study-config.json. Add token/chatId here only to override."
+}

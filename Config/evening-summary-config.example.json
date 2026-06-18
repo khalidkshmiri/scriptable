@@ -1,0 +1,4 @@
+{
+  "_comment": "Optional. Evening Summary reuses Telegram token/chatId and the calendars list from morning-summary-config.json. Add keys here only to override.",
+  "calendars": ["Events", "Family", "Rooster", "School", "Personal", "Barber Appointments", "Admin", "Other"]
+}

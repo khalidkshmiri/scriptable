@@ -1,0 +1,5 @@
+{
+  "_comment": "Optional. Reuses Telegram creds from morning-summary-config.json.",
+  "roosterName": "Rooster",
+  "remindersName": null
+}

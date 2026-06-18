@@ -21,6 +21,9 @@ All notable changes to this repo are documented here. Format loosely follows
   (weekly per-subject + notification-based Pomodoro → `study-log.json`), and `ov-widget`
   (next departures via keyless `ovapi.nl`).
 - New automation script `post-gym` (#14): muscle-group picker → `gym-log.json` + Telegram confirm.
+- New automation scripts (#14): `evening-summary` (tomorrow card → Telegram), `pre-school-briefing`
+  (plain-text first-lesson/deadlines/weather on School Focus), `weekly-review` (Sunday recap card
+  from the gym/barber/study logs). All reuse the morning-summary Telegram credentials.
 - Repo: root `CLAUDE.md` overview + per-module `CLAUDE.md` files; `CHANGELOG.md` (#21).
 
 ### Deferred (need external credentials)
