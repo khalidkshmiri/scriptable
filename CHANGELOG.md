@@ -17,6 +17,10 @@ All notable changes to this repo are documented here. Format loosely follows
   alert (#12) — left out pending API keys/endpoints.
 
 ### Changed
+- school-widget: extra-large (iPad) now uses a true two-column layout — timetable on the
+  left, Due on the right (#1).
+- school-widget: the Due section grows to fill empty space on light lesson days instead of
+  being hard-capped at 3 items (#8).
 - Repo: standardised on a single root `Config/` directory for all module config templates;
   removed per-module `Config/` folders (#21).
 

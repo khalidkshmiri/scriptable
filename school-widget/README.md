@@ -8,6 +8,16 @@ A Scriptable widget for iOS that shows your school schedule and upcoming deadlin
 2. Paste your iCal feed URL into `icalUrl`.
 3. Copy the contents of `school-widget-script.js` into a new Scriptable script named **School Widget**. Place it as a Large widget.
 
+## Widget sizes
+
+- **Large** (iPhone) — single column: the active/next lesson, the rest of the day as a
+  two-up lesson grid, then the **Due** section. On light lesson days the Due section
+  automatically grows to fill the empty space.
+- **Extra-large** (iPad) — two columns: the full timetable on the left (one lesson per row,
+  plus a *Tomorrow* preview), and the **Due** section on the right. Column widths are a
+  starting estimate (`XL_LEFT_W` / `XL_COL_GAP` near the top of the script) — nudge them if
+  the split looks off on your iPad.
+
 ## Config fields
 
 All fields except `icalUrl` are optional and fall back to the defaults shown below.

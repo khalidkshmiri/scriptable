@@ -17,7 +17,9 @@ const CACHE_FILE   = "school_ical.json"
 const SETTINGS = {
   refreshFallbackMinutes: 30,
   maxLaterLessons:   6,   // increased — two-column grid fits more
-  maxDeadlines:      3,
+  // Ceiling only — the real limiter is the leftover slot budget (see buildWidget),
+  // so on light lesson days the Due section grows to fill the empty space (#8).
+  maxDeadlines:      8,
   pastDays:          30,
   futureDays:        30,
   nextDayLookAhead:  30,
@@ -35,7 +37,7 @@ const DEADLINE_SLOTS    = 1   // compact deadline rows cost 1 slot each
 const IS_EXTRA_LARGE = config.widgetFamily === "extraLarge"
 if (IS_EXTRA_LARGE) {
   SETTINGS.maxLaterLessons = 12  // two-column grid, up to ~6 rows
-  SETTINGS.maxDeadlines    = 6
+  SETTINGS.maxDeadlines    = 14  // ceiling; right column fills with due items (#8/#1)
   WIDGET_SLOTS             = 42  // ~2× large slot budget
 }
 
@@ -272,7 +274,7 @@ async function fetchDeadlines() {
   return evts
     .filter(e => e.isAllDay)
     .sort((a, b) => a.startDate - b.startDate)
-    .slice(0, 5)
+    .slice(0, 14)
 }
 
 async function fetchReminders() {
@@ -283,7 +285,7 @@ async function fetchReminders() {
   return all
     .filter(r => !r.isCompleted)
     .sort((a, b) => (a.dueDate || new Date(9999, 0, 1)) - (b.dueDate || new Date(9999, 0, 1)))
-    .slice(0, 5)
+    .slice(0, 14)
 }
 
 // ─────────────────────────────────────────
@@ -428,9 +430,14 @@ function computeTransitions(todayEvents, now) {
 
 // Fixed width for the left cell in the two-column lesson grid.
 // Approximates half the large widget's content area (≈ 311px total - 13px dividers = 298, /2 ≈ 149).
-// For extra-large, these are patched upward after IS_EXTRA_LARGE detection above.
-let GRID_CELL_W    = IS_EXTRA_LARGE ? 200 : 142
-let CARD_CONTENT_W = IS_EXTRA_LARGE ? 500 : 280
+// For extra-large the timetable lives in a left column (XL_LEFT_W wide) and renders one
+// lesson per row, so CARD_CONTENT_W (progress bar) tracks that narrower column.
+let GRID_CELL_W    = IS_EXTRA_LARGE ? 165 : 142
+let CARD_CONTENT_W = IS_EXTRA_LARGE ? 330 : 280
+
+// Extra-large two-column split (iPad). Widths are estimates — fine-tune on device (#1).
+const XL_LEFT_W  = 360   // timetable column width in points
+const XL_COL_GAP = 16    // gap between timetable and Due columns
 
 // ── Mini lesson cell for the two-column grid.
 //    Row 1: [period pill] subject  teacher  [badge]  time
@@ -848,7 +855,7 @@ function renderTussenuurCard(w, gap) {
 //    Pairs lessons side-by-side with a thin vertical divider.
 //    Tussenuur placeholders always render full-width.
 //    Unpaired lessons (odd count or next to tussenuur) render full-width.
-function renderLessonGrid(w, events, sectionHeader) {
+function renderLessonGrid(w, events, sectionHeader, singleCol = false) {
   const shown         = Math.min(events.length, SETTINGS.maxLaterLessons)
   const lessonsToShow = events.slice(0, shown)
   const items         = insertGapPlaceholders(lessonsToShow)
@@ -871,6 +878,17 @@ function renderLessonGrid(w, events, sectionHeader) {
       renderTussenuurRow(w, a)
       w.addSpacer(4)
       i++
+      rowCount++
+      continue
+    }
+
+    // Single-column mode (narrow XL left column): one full-width lesson per row.
+    if (singleCol) {
+      const cell = w.addStack()
+      cell.layoutVertically()
+      renderMiniLessonCell(cell, a)
+      i++
+      w.addSpacer(5)
       rowCount++
       continue
     }
@@ -1073,7 +1091,8 @@ function renderTomorrowSection(w, allEvents, now) {
   const rest = evts.slice(1, 5)
   if (rest.length > 0) {
     w.addSpacer(6)
-    const [gridSlots] = renderLessonGrid(w, rest, "")
+    // Tomorrow preview lives in the narrow XL left column → single-column grid.
+    const [gridSlots] = renderLessonGrid(w, rest, "", true)
     slots += gridSlots
   }
   return slots
@@ -1184,11 +1203,28 @@ async function buildWidget() {
     w.refreshAfterDate = transitions[0]
   }
 
+  // ── Layout targets. Extra-large (iPad) splits into two columns: left = timetable,
+  //    right = Due. Every other size renders single-column (sched === due === w). (#1)
+  let sched = w, due = w
+  if (IS_EXTRA_LARGE) {
+    const columns = w.addStack()
+    columns.layoutHorizontally()
+    columns.topAlignContent()
+    sched = columns.addStack()
+    sched.layoutVertically()
+    sched.size = new Size(XL_LEFT_W, 0)
+    columns.addSpacer(XL_COL_GAP)
+    due = columns.addStack()
+    due.layoutVertically()
+  }
+  // Narrow XL left column can't fit two lessons side-by-side → one per row.
+  const gridSingleCol = IS_EXTRA_LARGE
+
   // CASE 1: Currently in a lesson
   if (current) {
     const mins     = Math.round((current.end - now) / 60000)
     const progress = (now - current.start) / (current.end - current.start)
-    renderLessonCard(w, current, "NOW", C.accent, C.card, null, progress)
+    renderLessonCard(sched, current, "NOW", C.accent, C.card, null, progress)
     slotsUsed += cardSlots(current)
 
     const afterCurrent = todayAll.filter(e => e.start >= current.end)
@@ -1199,14 +1235,14 @@ async function buildWidget() {
         const { period: pA } = parseSummary(current.summary)
         const { period: pB } = parseSummary(nextEv.summary)
         const hasTussenuur   = pA !== null && pB !== null && pB > pA + 1
-        w.addSpacer(5)
+        sched.addSpacer(5)
         if (hasTussenuur) {
           const pStr = (pA + 1 === pB - 1) ? `uur ${pA + 1}` : `uur ${pA + 1}–${pB - 1}`
-          const note = w.addText(`Tussenuur after this  ·  ${pStr}`)
+          const note = sched.addText(`Tussenuur after this  ·  ${pStr}`)
           note.font      = Font.systemFont(10)
           note.textColor = C.nextAccent
         } else {
-          const note = w.addText(`Pauze after this  ·  ${gapMin} min`)
+          const note = sched.addText(`Pauze after this  ·  ${gapMin} min`)
           note.font      = Font.systemFont(10)
           note.textColor = C.breakAccent
         }
@@ -1216,8 +1252,8 @@ async function buildWidget() {
 
     const laterToday = todayAll.filter(e => e.start > now)
     if (laterToday.length > 0) {
-      w.addSpacer(8)
-      const [gridSlots, gridOverflow] = renderLessonGrid(w, laterToday, "LATER TODAY")
+      sched.addSpacer(8)
+      const [gridSlots, gridOverflow] = renderLessonGrid(sched, laterToday, "LATER TODAY", gridSingleCol)
       slotsUsed += gridSlots
       lastGridOverflow = gridOverflow
     }
@@ -1228,27 +1264,27 @@ async function buildWidget() {
 
     if (gap) {
       if (gap.type === 'tussenuur') {
-        renderTussenuurCard(w, gap)
+        renderTussenuurCard(sched, gap)
       } else {
-        renderBreakCard(w, gap)
+        renderBreakCard(sched, gap)
       }
       slotsUsed += cardSlots(gap.next)
       const afterGap = todayAll.filter(e => e.start > gap.next.start)
       if (afterGap.length > 0) {
-        w.addSpacer(8)
-        const [gridSlots, gridOverflow] = renderLessonGrid(w, afterGap, "LATER TODAY")
+        sched.addSpacer(8)
+        const [gridSlots, gridOverflow] = renderLessonGrid(sched, afterGap, "LATER TODAY", gridSingleCol)
         slotsUsed += gridSlots
         lastGridOverflow = gridOverflow
       }
     } else {
       const next = todayAll.find(e => e.start > now)
       const mins = Math.round((next.start - now) / 60000)
-      renderLessonCard(w, next, "NEXT LESSON", C.accent, C.card, `Starts in ${mins} min`)
+      renderLessonCard(sched, next, "NEXT LESSON", C.accent, C.card, `Starts in ${mins} min`)
       slotsUsed += cardSlots(next)
       const rest = todayAll.filter(e => e.start > next.start)
       if (rest.length > 0) {
-        w.addSpacer(8)
-        const [gridSlots, gridOverflow] = renderLessonGrid(w, rest, "LATER TODAY")
+        sched.addSpacer(8)
+        const [gridSlots, gridOverflow] = renderLessonGrid(sched, rest, "LATER TODAY", gridSingleCol)
         slotsUsed += gridSlots
         lastGridOverflow = gridOverflow
       }
@@ -1259,11 +1295,11 @@ async function buildWidget() {
     if (noLessons) {
       const dow    = now.getDay() // 0 = Sunday, 6 = Saturday
       const label  = (dow === 0 || dow === 6) ? "WEEKEND" : "HOLIDAY"
-      const lbl    = w.addText(label)
+      const lbl    = sched.addText(label)
       lbl.font      = Font.boldSystemFont(13)
       lbl.textColor = C.nextAccent
     } else {
-      const t = w.addText("✓ Done for today")
+      const t = sched.addText("✓ Done for today")
       t.font      = Font.systemFont(9)
       t.textColor = C.done
     }
@@ -1273,11 +1309,11 @@ async function buildWidget() {
     const nextDayEvts = nextDay ? eventsOnDate(allEvents, nextDay) : []
 
     if (nextDay && nextDayEvts.length > 0) {
-      w.addSpacer(8)
+      sched.addSpacer(8)
       const label       = dayLabel(nextDay)
       const firstLesson = nextDayEvts[0]
       renderLessonCard(
-        w,
+        sched,
         firstLesson,
         label,
         C.nextAccent,
@@ -1287,14 +1323,14 @@ async function buildWidget() {
       slotsUsed += cardSlots(firstLesson)
       const restOfNextDay = nextDayEvts.slice(1)
       if (restOfNextDay.length > 0) {
-        w.addSpacer(8)
-        const [gridSlots, gridOverflow] = renderLessonGrid(w, restOfNextDay, "")
+        sched.addSpacer(8)
+        const [gridSlots, gridOverflow] = renderLessonGrid(sched, restOfNextDay, "", gridSingleCol)
         slotsUsed += gridSlots
         lastGridOverflow = gridOverflow
       }
     } else {
-      w.addSpacer(6)
-      const t = w.addText("No upcoming lessons in the next 30 days")
+      sched.addSpacer(6)
+      const t = sched.addText("No upcoming lessons in the next 30 days")
       t.font      = Font.systemFont(11)
       t.textColor = C.secondary
       slotsUsed += 1
@@ -1304,17 +1340,26 @@ async function buildWidget() {
   // ── Tomorrow preview (extra-large + Cases 1/2/3 where today isn't done)
   // Case 3 (today done/no lessons) already shows next school day as primary content.
   if (IS_EXTRA_LARGE && !todayDone && !noLessons) {
-    slotsUsed += renderTomorrowSection(w, allEvents, now)
+    slotsUsed += renderTomorrowSection(sched, allEvents, now)
   }
 
-  // ── Compute how many deadline items actually fit, then render
-  const remainingSlots = WIDGET_SLOTS - slotsUsed - DEADLINE_OVERHEAD
-  const maxDeadlines   = Math.min(
-    SETTINGS.maxDeadlines,
-    Math.max(1, Math.floor(remainingSlots / DEADLINE_SLOTS))
-  )
+  // ── How many deadline items to show.
+  // XL: the Due column has its own space, so fill it up to the ceiling.
+  // Other sizes: bounded by the leftover vertical slot budget.
+  let maxDeadlines
+  if (IS_EXTRA_LARGE) {
+    maxDeadlines = SETTINGS.maxDeadlines
+  } else {
+    const remainingSlots = WIDGET_SLOTS - slotsUsed - DEADLINE_OVERHEAD
+    maxDeadlines = Math.min(
+      SETTINGS.maxDeadlines,
+      Math.max(1, Math.floor(remainingSlots / DEADLINE_SLOTS))
+    )
+  }
 
-  renderDeadlines(w, deadlines, reminders, maxDeadlines, lastGridOverflow)
+  // In the two-column layout the lesson overflow note belongs under the timetable,
+  // not the Due header — so suppress it there.
+  renderDeadlines(due, deadlines, reminders, maxDeadlines, IS_EXTRA_LARGE ? 0 : lastGridOverflow)
 
   w.addSpacer(4)
   return w
