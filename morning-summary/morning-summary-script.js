@@ -452,6 +452,14 @@ function sortedCals(calendar) {
       : { name: n, events: calendar.grouped[n] })
 }
 
+// "Logical" event count for the day: the school timetable (Rooster) is dozens of
+// back-to-back lessons but counts as one commitment, so collapse it into grouped
+// sessions before counting. Used for the heavy/light-day advice, not the raw total.
+function logicalEventCount(calendar) {
+  if (!calendar.ok) return 0
+  return sortedCals(calendar).reduce((sum, grp) => sum + grp.events.length, 0)
+}
+
 // ─── DATA FETCHING ────────────────────────────────────
 async function getWeather(loc) {
   try {
@@ -691,10 +699,11 @@ function buildAdvice(weather, calendar, departure) {
     for (const n of CFG.calendars) if (calendar.grouped[n]) all.push(...calendar.grouped[n])
     all.sort((a, b) => a.startDate - b.startDate)
 
-    // busy / light day
-    if (calendar.total >= 4) {
-      advice.push(`Heavy day \u2014 ${calendar.total} events. Stay on schedule`)
-    } else if (calendar.total <= 1) {
+    // busy / light day \u2014 count the school timetable as one commitment, not 1 per lesson
+    const dayCount = logicalEventCount(calendar)
+    if (dayCount >= 4) {
+      advice.push(`Heavy day \u2014 ${dayCount} events. Stay on schedule`)
+    } else if (dayCount <= 1) {
       advice.push(`Light day \u2014 good time to study or prep the shop`)
     }
 
