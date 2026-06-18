@@ -119,8 +119,8 @@ const DARK_THEME = {
   breakAccent:   new Color("#4ade80"),
   nextAccent:    new Color("#818cf8"),
   primary:       new Color("#dde8f8"),
-  secondary:     new Color("#253d58"),
-  teacherAbbr:   new Color("#1a3048"),
+  secondary:     new Color("#6a85a6"),   // raised from #253d58 — teacher/time were near-invisible (#9)
+  teacherAbbr:   new Color("#4a6481"),   // raised from #1a3048 (#9)
   done:          new Color("#4ade80"),
   urgent:        new Color("#f87171"),
   warning:       new Color("#fb923c"),
@@ -134,7 +134,7 @@ const DARK_THEME = {
   cancelledText: new Color("#162232"),
   divider:       new Color("#0e2030"),
   colDivider:    new Color("#112030"),
-  sectionLabel:  new Color("#3a5a7a"),
+  sectionLabel:  new Color("#5e7ea3"),   // raised from #3a5a7a (#9)
 }
 
 const LIGHT_THEME = {
@@ -566,7 +566,7 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown, pr
   topRow.layoutHorizontally()
   topRow.centerAlignContent()
   const lbl = topRow.addText(label)
-  lbl.font      = Font.boldSystemFont(8)
+  lbl.font      = Font.boldSystemFont(9)
   lbl.textColor = accentColor
   if (countdown) {
     topRow.addSpacer()
@@ -594,10 +594,10 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown, pr
     mainRow.addSpacer(8)
   }
 
-  // Subject name
+  // Subject name — featured cards get a slightly larger subject for prominence (#9)
   const displaySubject = isCancelled ? strikeThrough(subject) : subject
   const nm = mainRow.addText(displaySubject)
-  nm.font      = Font.boldSystemFont(13)
+  nm.font      = Font.boldSystemFont(14)
   nm.textColor = isCancelled ? C.cancelledText : C.primary
 
   // Test badge
@@ -615,7 +615,7 @@ function renderLessonCard(w, event, label, accentColor, cardColor, countdown, pr
   // Time range — right-aligned, prominent
   mainRow.addSpacer()
   const timeRange = mainRow.addText(`${fmtTime(event.start)}–${fmtTime(event.end)}`)
-  timeRange.font      = Font.boldSystemFont(13)
+  timeRange.font      = Font.boldSystemFont(14)
   timeRange.textColor = isCancelled ? C.cancelledText : accentColor
 
   // ── Row 3: teacher  ·  classroom  (below subject line)
@@ -862,8 +862,8 @@ function renderLessonGrid(w, events, sectionHeader, singleCol = false) {
 
   if (sectionHeader) {
     const hdr = w.addText(sectionHeader)
-    hdr.font      = Font.boldSystemFont(8)
-    hdr.textColor = C.secondary
+    hdr.font      = Font.boldSystemFont(9)
+    hdr.textColor = C.sectionLabel
     w.addSpacer(5)
   }
 
@@ -974,7 +974,7 @@ function renderDeadlines(w, deadlines, reminders, maxItems, lessonOverflow = 0) 
   const showMore = overflow > 0
   const combined = showMore ? all.slice(0, maxItems - 1) : all.slice(0, maxItems)
 
-  w.addSpacer(4)
+  w.addSpacer(8)   // clearer break between the timetable and the Due section (#9)
 
   // Section header: "+X more" (left, lesson overflow) · flex · "DUE" · "X items" (right)
   const hdrRow = w.addStack()
@@ -1040,7 +1040,7 @@ function renderDeadlines(w, deadlines, reminders, maxItems, lessonOverflow = 0) 
     dueLbl.font      = Font.boldSystemFont(10)
     dueLbl.textColor = dueColor
 
-    w.addSpacer(3)
+    w.addSpacer(4)   // a touch more room between due rows (#9)
   }
 
   if (showMore) {
@@ -1078,7 +1078,7 @@ function renderTomorrowSection(w, allEvents, now) {
 
   // Section header
   const hdr = w.addText("TOMORROW")
-  hdr.font      = Font.boldSystemFont(8)
+  hdr.font      = Font.boldSystemFont(9)
   hdr.textColor = C.sectionLabel
   w.addSpacer(4)
   slots += 1

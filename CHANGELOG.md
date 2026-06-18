@@ -35,6 +35,9 @@ All notable changes to this repo are documented here. Format loosely follows
   left, Due on the right (#1).
 - school-widget: the Due section grows to fill empty space on light lesson days instead of
   being hard-capped at 3 items (#8).
+- school-widget: design pass (#9) — raised dark-theme `secondary`/`teacherAbbr`/`sectionLabel`
+  contrast (teacher/time text was near-invisible), unified section-label sizing to 9pt, bumped
+  the featured lesson subject/time to 14pt, and added breathing room around the Due section.
 - Repo: standardised on a single root `Config/` directory for all module config templates;
   removed per-module `Config/` folders (#21).
 
