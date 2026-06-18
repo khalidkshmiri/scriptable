@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy to study-config.json in Scriptable's Config/ folder. weeklyTargetHours flags subjects below target in the widget.",
+  "subjects": [
+    { "name": "Wiskunde", "weeklyTargetHours": 2 },
+    { "name": "Engels", "weeklyTargetHours": 1 },
+    { "name": "Economie", "weeklyTargetHours": 1 },
+    { "name": "Nederlands", "weeklyTargetHours": 1 }
+  ],
+  "pomodoroMin": 25
+}

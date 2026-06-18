@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to ov-config.json in Scriptable's Config/ folder. Find a stop area code at http://v0.ovapi.nl/stopareacode (lists all areas). lineFilter is optional.",
+  "stopAreaCode": "rotcs",
+  "maxDepartures": 3,
+  "lineFilter": []
+}

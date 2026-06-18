@@ -16,6 +16,11 @@ All notable changes to this repo are documented here. Format loosely follows
   `accessoryRectangular`, configured via `Config/countdown-config.json` (#13).
 - New `next-event-widget` module: lock-screen next calendar event, `accessoryInline` +
   `accessoryRectangular`, configured via `Config/next-event-config.json` (#13).
+- New standalone widgets (#15): `barber-tracker` (earnings widget + quick-log → `barber-log.json`),
+  `gym-log-widget` (streak/last session over `gym-log.json` + quick-log), `study-tracker`
+  (weekly per-subject + notification-based Pomodoro → `study-log.json`), and `ov-widget`
+  (next departures via keyless `ovapi.nl`).
+- New automation script `post-gym` (#14): muscle-group picker → `gym-log.json` + Telegram confirm.
 - Repo: root `CLAUDE.md` overview + per-module `CLAUDE.md` files; `CHANGELOG.md` (#21).
 
 ### Deferred (need external credentials)
