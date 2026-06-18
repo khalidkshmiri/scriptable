@@ -12,11 +12,24 @@ truth; deployment copies it into that iCloud folder.
 
 ## Modules
 
-| Folder | Script | What it is |
-|---|---|---|
-| `morning-summary/` | `morning-summary-script.js` | Wake-time visual card (weather + calendar + reminders + advice) rendered with DrawContext and sent to Telegram. See `morning-summary/CLAUDE.md`. |
-| `school-widget/` | `school-widget-script.js` | Large/extra-large home-screen widget: Magister timetable + deadlines. See `school-widget/CLAUDE.md`. |
-| `school-lockscreen/` | `school-lockscreen-script.js` | `accessoryRectangular` lock-screen widget: current + next lesson. See `school-lockscreen/CLAUDE.md`. |
+Every module is `<name>/<name>-script.js`. Telegram-sending scripts reuse the token/chatId in
+`Config/morning-summary-config.json` rather than each holding their own credentials.
+
+| Folder | What it is |
+|---|---|
+| `morning-summary/` | Wake-time visual card (weather + AQI + calendar + reminders + advice + quote) → Telegram. See `morning-summary/CLAUDE.md`. |
+| `school-widget/` | Large/extra-large home-screen widget: Magister timetable + deadlines. Extra-large = two columns (timetable / Due). See `school-widget/CLAUDE.md`. |
+| `school-lockscreen/` | Lock-screen widget: `accessoryRectangular` (current+next lesson) and `accessoryCircular` (next-lesson countdown ring), by widget family. |
+| `countdown-widget/` | Lock-screen countdown to named dates (`accessoryInline`/`accessoryRectangular`). |
+| `next-event-widget/` | Lock-screen next calendar event (`accessoryInline`/`accessoryRectangular`). |
+| `barber-tracker/` | Medium earnings widget + quick-log action → `barber-log.json`. |
+| `gym-log-widget/` | Streak/today/last-session widget over `gym-log.json` + quick-log. |
+| `study-tracker/` | Weekly per-subject widget + notification-based Pomodoro → `study-log.json`. |
+| `ov-widget/` | Next NS/RET departures via the keyless `ovapi.nl` endpoint. |
+| `post-gym/` | Shortcuts-triggered muscle-group logger → `gym-log.json` + Telegram. |
+| `evening-summary/` | Tomorrow's card (weather/agenda/reminders) → Telegram (~21:30). |
+| `pre-school-briefing/` | Plain-text first-lesson/deadlines/weather → Telegram on School Focus. |
+| `weekly-review/` | Sunday recap card from the gym/barber/study logs → Telegram. |
 
 ## Shared conventions
 
@@ -33,6 +46,16 @@ Widgets that depend on a network feed cache the raw response under
 `Scriptable/Cache/<name>.json` via `FileManager.iCloud()` and fall back to it silently on
 network failure. Cross-script data (gym/barber/study logs) is shared as plain JSON files in the
 Scriptable documents directory — never committed.
+
+### Shared log formats (data contract between scripts)
+Append-only arrays in the Scriptable documents directory. `ts` is an ISO timestamp; `date` is
+local `YYYY-MM-DD` (used for day/week grouping and streaks).
+- `gym-log.json` — `[{ date, durationMin: number|null, muscles: string[], ts }]`
+  (written by `post-gym`/`gym-log-widget`; read by `morning-summary` streak + `weekly-review`)
+- `barber-log.json` — `[{ date, amount: number, note: string, ts }]`
+  (written by `barber-tracker`; read by `weekly-review`)
+- `study-log.json` — `[{ date, subject: string, durationMin: number, ts }]`
+  (written by `study-tracker`; read by `weekly-review`)
 
 ### Scriptable gotchas (apply everywhere)
 - `Script.complete()` — capital S; lowercase `script` is undefined in automation context.

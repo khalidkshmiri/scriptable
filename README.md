@@ -1,6 +1,8 @@
 # Scriptable Scripts
 
-This repo contains two iPhone automation scripts built with [Scriptable](https://scriptable.app) — a free iOS app that lets you run JavaScript code on your phone to build widgets and automations.
+This repo contains a set of iPhone widgets and automation scripts built with
+[Scriptable](https://scriptable.app) — a free iOS app that lets you run JavaScript code on your
+phone to build widgets and automations.
 
 No coding knowledge is needed to use these scripts. You just paste the code into the app and follow the setup steps below.
 
@@ -12,6 +14,28 @@ No coding knowledge is needed to use these scripts. You just paste the code into
 |---|---|
 | [Morning Summary](#morning-summary) | Sends you a daily briefing card to Telegram when you wake up |
 | [School Widget](#school-widget) | Shows your school schedule and upcoming deadlines on your home screen |
+
+### More widgets & automations
+
+Each lives in its own folder with a dedicated README. Telegram-sending scripts reuse the
+credentials from `Config/morning-summary-config.json`.
+
+| Script | Folder | What it does |
+|---|---|---|
+| School Lockscreen | `school-lockscreen/` | Lock-screen current/next lesson + countdown ring |
+| Countdown | `countdown-widget/` | Lock-screen countdown to exam dates / milestones |
+| Next Event | `next-event-widget/` | Lock-screen next calendar event |
+| Barber Tracker | `barber-tracker/` | Earnings widget + quick-log → `barber-log.json` |
+| Gym Log | `gym-log-widget/` | Workout streak widget + quick-log → `gym-log.json` |
+| Study Tracker | `study-tracker/` | Weekly study widget + Pomodoro → `study-log.json` |
+| OV Departures | `ov-widget/` | Next NS/RET departures (keyless `ovapi.nl`) |
+| Post-Gym | `post-gym/` | Log a workout when Gym Focus ends |
+| Evening Summary | `evening-summary/` | Tomorrow's card to Telegram (~21:30) |
+| Pre-School Briefing | `pre-school-briefing/` | First lesson + deadlines + weather on School Focus |
+| Weekly Review | `weekly-review/` | Sunday recap card from your logs |
+
+> Configuration templates for every script live in `Config/*.example.json`. Copy the one you
+> need to `Config/<name>-config.json` in the Scriptable iCloud folder and fill it in.
 
 ---
 
