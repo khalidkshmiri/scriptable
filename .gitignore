@@ -13,3 +13,6 @@ Config/*.json
 **/Cache/
 school-widget/school_ical.json
 *-log.json
+
+# graphify code-graph output (regenerable, rebuilt by post-commit hook)
+graphify-out/
